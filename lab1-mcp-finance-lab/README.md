@@ -1,219 +1,162 @@
-Создание MCP-сервера для расчета кредитов и вкладов
-==================================================
+# Инструкция по запуску MCP-сервера в ai-agents
 
-В этой лабораторной работе вы создадите MCP-сервер, предоставляющий инструменты для расчета графиков выплат по кредитам и вкладам.  
-Вы освоите основы разработки MCP-сервисов с использованием фреймворка FastMCP, подготовите Docker-образ и развернете его в облаке |names__company| |names__evo|.  
-В результате вы получите навыки интеграции собственных инструментов с AI-агентами и сможете использовать их в автоматизированных сценариях.
-
-Вы будете использовать следующие сервисы:
+---
 
-- :doc:`Artifact Registry <artifact-registry__ug:index>` --- реестр контейнеров для хранения Docker-образов.
-- :doc:`AI Agents <ai-agents__ug:index>` --- платформа для создания и управления AI-агентами.
-- FastMCP --- фреймворк для создания MCP-серверов.
-- Docker --- для сборки и распространения сервиса.
-
-Шаги:
-
-#. :ref:`Подготовьте инфраструктуру <mcp-server__step1>`.
-#. :ref:`Создайте MCP-сервер <mcp-server__step2>`.
-#. :ref:`Соберите и загрузите Docker-образ <mcp-server__step3>`.
-#. :ref:`Создайте MCP-сервер в облаке <mcp-server__step4>`.
-#. :ref:`Создайте агента с MCP-тулами <mcp-server__step5>`.
+## Как написать MCP-сервер?
 
-|section-titles__before-work|
------------------------------
+Мы разберем как написать MCP-сервер расчета кредитов и вкладов.
 
-#. 
-   .. include:: /../../_warehouse/console.rsti
-      :start-after: {{start-after console__quickstart-all}}
-      :end-before: {{end-before console__quickstart-all}}
+Все файлы кроме ```src/main.py``` отвечают за реализацию тулов, которая в вашем случае будет отличаться, поэтому сфокусируемся на 
+```src/main.py```. 
 
-.. _mcp-server__step1:
+### 1. Что такое MCP-сервер
 
-1. Подготовьте инфраструктуру
------------------------------
+MCP-сервер — это сервис, предоставляющий набор инструментов (tools), к которым может обращаться агент. Каждый инструмент — это функция Python, зарегистрированная в фреймворке **FastMCP**.
 
-На этом шаге вы создадите реестр и репозиторий в Artifact Registry для хранения Docker-образа вашего MCP-сервера.
+FastMCP берёт на себя:
 
-#. :doc:`Создайте реестр <artifact-registry__ug:topics/guides__create-registry>` в сервисе Artifact Registry.
-#. :doc:`Создайте репозиторий <artifact-registry__ug:topics/guides__create-repository>` в созданном реестре для хранения образа MCP-сервера.
+* запуск сервера (SSE),
+* регистрацию и описание инструментов,
+* сериализацию/десериализацию аргументов и результатов,
+* автоматическую генерацию спецификаций для клиента.
 
-.. _mcp-server__step2:
+### 2. Базовая структура
 
-2. Создайте MCP-сервер
-----------------------
+MCP-сервер обычно состоит из:
 
-На этом шаге вы реализуете базовую структуру MCP-сервера с инструментами расчета кредитов и вкладов.
+* **основного файла** (`main.py`), где создаётся экземпляр `FastMCP`, подключаются инструменты и запускается сервер,
+* **описаний инструментов** через декоратор `@mcp.tool`.
+* **модулей с бизнес-логикой** (например, расчёты, валидации),
 
-#. Создайте файл ``src/main.py`` со следующим содержимым:
+Пример создания сервера:
 
-   .. code-block:: python
+```python
+import os
+from fastmcp import FastMCP
 
-      import os
-      from fastmcp import FastMCP
+mcp = FastMCP("Finance Schedules")
 
-      mcp = FastMCP("Finance Schedules")
+if __name__ == "__main__":
+    mcp.run(
+        transport="sse",          # транспорт (sse или websocket)
+        host="0.0.0.0",           # адрес
+        port=os.getenv("PORT", 8000)  # порт по умолчанию 8000
+    )
+```
 
-      @mcp.tool
-      def loan_schedule_annuity(principal: float, annual_rate_percent: float, months: int) -> dict:
-          """
-          Рассчитывает график аннуитетных платежей по кредиту.
+После запуска сервер слушает входящие запросы и выполняет зарегистрированные инструменты.
 
-          Args:
-              principal (float): Сумма кредита (> 0).
-              annual_rate_percent (float): Годовая процентная ставка (0 < rate <= 100).
-              months (int): Срок кредита в месяцах (> 0).
+### 3. Регистрация инструментов
 
-          Returns:
-              Dict[str, Any]: Словарь с ключами 'summary' и 'schedule'.
-                  - summary: Общая информация по кредиту.
-                  - schedule: Список ежемесячных платежей.
+Инструменты определяются как обычные функции Python, аннотированные декоратором `@mcp.tool`.
 
-          Raises:
-              ValueError: Если параметры выходят за допустимые границы.
-          """
-          if principal <= 0:
-              raise ValueError("principal должно быть положительным числом.")
-          if not (0 < annual_rate_percent <= 100):
-              raise ValueError("annual_rate_percent должно быть в диапазоне (0, 100].")
-          if months <= 0:
-              raise ValueError("months должно быть положительным числом.")
+```python
+@mcp.tool
+def loan_schedule_annuity(principal: float, annual_rate_percent: float, months: int) -> dict:
+    """Полное и достаточное описание инструмента"""
+    # валидации и расчёты
+    return {"summary": {...}, "schedule": [...]}
+```
 
-          monthly_rate = annual_rate_percent / 100 / 12
-          annuity_payment = principal * (monthly_rate * (1 + monthly_rate)**months) / ((1 + monthly_rate)**months - 1)
-          
-          schedule = []
-          remaining_principal = principal
-          total_interest = 0
+FastMCP автоматически:
 
-          for month in range(1, months + 1):
-              interest_payment = remaining_principal * monthly_rate
-              principal_payment = annuity_payment - interest_payment
-              remaining_principal -= principal_payment
-              total_interest += interest_payment
+* создаёт описание инструмента (имя, аргументы, возвращаемый тип) из аннотаций и docstring,
+* добавляет его в спецификацию сервера,
+* обрабатывает вызовы с аргументами.
 
-              schedule.append({
-                  "month": month,
-                  "payment": round(annuity_payment, 2),
-                  "principal": round(principal_payment, 2),
-                  "interest": round(interest_payment, 2),
-                  "remaining": round(max(remaining_principal, 0), 2)
-              })
+### 4. Как правильно писать описания MCP-тулов
 
-          summary = {
-              "total_payment": round(annuity_payment * months, 2),
-              "total_interest": round(total_interest, 2)
-          }
+Чтобы инструменты были понятны и клиенту, и агенту, рекомендуется придерживаться следующих правил:
 
-          return {"summary": summary, "schedule": schedule}
+1. **Docstring обязателен**
+   Первые 1–2 строки — краткое назначение инструмента. Далее — подробное описание формата входных и выходных данных.
 
-      if __name__ == "__main__":
-          mcp.run(
-              transport="sse",
-              host="0.0.0.0",
-              port=os.getenv("PORT", 8000)
-          )
+2. **Описание аргументов**
+   Используй секцию `Args:`. Укажи тип, допустимый диапазон и смысл каждого параметра.
 
-#. Реализуйте дополнительные инструменты по необходимости, следуя тем же принципам.
+   Пример:
 
-.. _mcp-server__step3:
+   ```python
+   Args:
+       principal (float): Сумма кредита (> 0, ≤ лимита).
+       annual_rate_percent (float): Годовая ставка в процентах.
+       months (int): Срок в месяцах.
+   ```
 
-3. Соберите и загрузите Docker-образ
-------------------------------------
+3. **Описание возвращаемых данных**
+   Указывай структуру словаря, ключи и что они означают.
+   Используй `Returns:` → `Dict[str, Any]`.
 
-На этом шаге вы подготовите Docker-образ вашего MCP-сервера и загрузите его в Artifact Registry.
+4. **Описание исключений**
+   Важно явно документировать, при каких условиях поднимается `ValueError` (например, неверные диапазоны).
 
-#. Создайте файл ``Dockerfile`` в корне проекта:
+5. **Дополнительные примечания**
+   Если есть округления, коррекции или ограничения, указывай их в `Note:`.
 
-   .. code-block:: dockerfile
 
-      FROM python:3.11-slim
 
-      WORKDIR /app
+### 5. Рекомендации по стилю
 
-      COPY requirements.txt .
-      RUN pip install --no-cache-dir -r requirements.txt
+* Один `FastMCP` на весь сервис.
+* Логику расчётов выноси в отдельные модули (а в туле только валидация + вызов).
+* Docstring должен быть **самодостаточным** — чтобы агент мог понять инструмент только по описанию.
+* Используй строгие аннотации типов (`float`, `int`, `bool`) → FastMCP будет валидировать входные данные автоматически.
 
-      COPY src/ ./src/
+## Запуск mcp сервера в AI agents
 
-      EXPOSE 8000
+### Важный момент.
 
-      CMD ["python", "src/main.py"]
+MCP сервер в AI agents не должен использовать файловую систему в рантайме. Все манипуляции с ней необходимо делать на этапе сборки docker-образа**
 
-#. Создайте файл ``requirements.txt``:
+#### Предварительно нужно:
+1. Создать реестр в сервисе Artifact Registry.
 
-   .. code-block:: text
+![create_reestr](docs/create-reestr.png)
 
-      fastmcp>=0.1.0
+2. Создать репозиторий в котором будем хранить наш mcp сервер
 
-#. Выполните аутентификацию в Artifact Registry:
+![create_repo](docs/create_repo.png)
 
-   .. code-block:: bash
+3. Загрузить docker образ по инструкции
 
-      gcloud auth configure-docker cloudru-labs.cr.cloud.ru
+![artifact_upload_doc.png](docs/artifact_upload_doc.png)
 
-#. Соберите Docker-образ:
+3.0 Пройти аутентификацию по инструкции https://cloud.ru/docs/artifact-registry-evolution/ug/topics/quickstart
 
-   .. code-block:: bash
+3.1 Собрать докер образ
+```shell
+docker buildx build --platform linux/amd64 -t mcp-finance .
+```
 
-      docker buildx build --platform linux/amd64 -t mcp-finance .
+3.2 Присвойте Docker-образу тег
+```shell
+docker tag mcp-finance:latest cloudru-labs.cr.cloud.ru/mcp-finance-repo:v1.0.0
+```
 
-#. Присвойте образу тег:
+3.3 Загрузите артефакт в репозиторий
+```shell
+docker push cloudru-labs.cr.cloud.ru/mcp-finance-repo:v1.0.0
+```
 
-   .. code-block:: bash
+![artifact_upload_success.png](docs/artifact_upload_success.png)
 
-      docker tag mcp-finance:latest cloudru-labs.cr.cloud.ru/<REPO_NAME>:v1.0.0
+4. Создаем mcp сервер через UI cloud.ru
 
-   Где:
+![create_mcp.png](docs/create_mcp.png)
 
-   - <REPO_NAME> --- имя репозитория, созданного на шаге 1.
+![create_mcp2.png](docs/create_mcp_2.png)
 
-#. Загрузите образ в репозиторий:
+Успешно созданный mcp сервер:
 
-   .. code-block:: bash
+![success_mcp.png](docs/success_mcp.png)
 
-      docker push cloudru-labs.cr.cloud.ru/<REPO_NAME>:v1.0.0
+5. Создаем агента с нашими MCP тулами. MCP сервер нужно выбрать в соответствующем поле.
 
-.. _mcp-server__step4:
+![create_agent.png](docs/create_agent.png)
+![create_agent_2.png](docs/create_agent_2.png)
 
-4. Создайте MCP-сервер в облаке
--------------------------------
+6. Общаемся с агентом.
 
-На этом шаге вы зарегистрируете MCP-сервер в облаке |names__company| |names__evo|.
-
-#. В личном кабинете перейдите в раздел :menuselection:`AI --> AI Agents`.
-#. Нажмите :guilabel:`Создать MCP-сервер`.
-#. Укажите параметры:
-
-   - :guilabel:`Название`: Finance MCP Server.
-   - :guilabel:`Docker-образ`: cloudru-labs.cr.cloud.ru/<REPO_NAME>:v1.0.0.
-   - :guilabel:`Порт`: 8000.
-
-#. Нажмите :guilabel:`Создать`.
-
-Убедитесь, что сервер успешно создан и отображается в списке с состоянием "Активен".
-
-.. _mcp-server__step5:
-
-5. Создайте агента с MCP-тулами
--------------------------------
-
-На этом шаге вы создадите AI-агента, который будет использовать инструменты вашего MCP-сервера.
-
-#. В личном кабинете перейдите в раздел :menuselection:`AI --> AI Agents`.
-#. Нажмите :guilabel:`Создать агента`.
-#. Укажите параметры:
-
-   - :guilabel:`Название`: Finance Agent.
-   - :guilabel:`MCP-сервер`: Finance MCP Server (выбранный на предыдущем шаге).
-
-#. Нажмите :guilabel:`Создать`.
-
-Убедитесь, что агент создан и имеет доступ к инструментам.
-
-|section-titles__next|
-----------------------
-
-В ходе лабораторной работы вы создали MCP-сервер с инструментами финансовых расчетов, подготовили и загрузили Docker-образ, а также интегрировали сервер с AI-агентом.  
-
-Узнавайте больше о работе с сервисами и получайте практические навыки управления облаком, выполняя :doc:`лабораторные работы <../index>`.
+![agent_chat_1.png](docs/agent_chat_1.png)
+![agent_chat_2.png](docs/agent_chat_2.png)
+![agent_chat_3.png](docs/agent_chat_3.png)
