@@ -1,2 +1,6 @@
 /.vscode/
 /.idea
+
+# Environment variables
+.env
+!.env.example

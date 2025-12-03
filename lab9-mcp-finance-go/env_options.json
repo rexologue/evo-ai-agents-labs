@@ -1,0 +1,120 @@
+{
+  "environment_variables": [
+    {
+      "name": "PORT",
+      "type": "integer",
+      "default": 8000,
+      "description": "Порт для запуска MCP сервера",
+      "required": false,
+      "validation": {
+        "min": 1024,
+        "max": 65535
+      },
+      "example": 8000
+    },
+    {
+      "name": "OTEL_ENDPOINT",
+      "type": "string",
+      "default": "",
+      "description": "Endpoint для экспорта трейсов OpenTelemetry (OTLP). Если не задан, используется noop экспортер для локальной разработки",
+      "required": false,
+      "validation": {
+        "format": "url"
+      },
+      "example": "http://localhost:4318/v1/traces"
+    },
+    {
+      "name": "OTEL_SERVICE_NAME",
+      "type": "string",
+      "default": "mcp-finance-server",
+      "description": "Имя сервиса для OpenTelemetry трейсинга",
+      "required": false,
+      "validation": {
+        "pattern": "^[a-zA-Z0-9_-]+$"
+      },
+      "example": "mcp-finance-server"
+    },
+    {
+      "name": "LOG_LEVEL",
+      "type": "string",
+      "default": "INFO",
+      "description": "Уровень логирования (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+      "required": false,
+      "validation": {
+        "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+      },
+      "example": "INFO"
+    },
+    {
+      "name": "MAX_PRINCIPAL",
+      "type": "float",
+      "default": 1000000000,
+      "description": "Максимальная сумма кредита/вклада (по умолчанию 1 млрд)",
+      "required": false,
+      "validation": {
+        "min": 0
+      },
+      "example": 1000000000
+    },
+    {
+      "name": "MAX_CONTRIBUTION",
+      "type": "float",
+      "default": 100000000,
+      "description": "Максимальный ежемесячный взнос (по умолчанию 100 млн)",
+      "required": false,
+      "validation": {
+        "min": 0
+      },
+      "example": 100000000
+    },
+    {
+      "name": "MAX_MONTHS",
+      "type": "integer",
+      "default": 600,
+      "description": "Максимальный срок в месяцах (по умолчанию 600 месяцев = 50 лет)",
+      "required": false,
+      "validation": {
+        "min": 1,
+        "max": 1200
+      },
+      "example": 600
+    },
+    {
+      "name": "MAX_RATE",
+      "type": "float",
+      "default": 200,
+      "description": "Максимальная процентная ставка в процентах годовых (по умолчанию 200%)",
+      "required": false,
+      "validation": {
+        "min": 0,
+        "max": 1000
+      },
+      "example": 200
+    },
+    {
+      "name": "MAX_BALANCE_CAP",
+      "type": "float",
+      "default": 1000000000000,
+      "description": "Максимальный баланс для защиты от переполнения (по умолчанию 1 трлн)",
+      "required": false,
+      "validation": {
+        "min": 0
+      },
+      "example": 1000000000000
+    }
+  ],
+  "metadata": {
+    "version": "1.0.0",
+    "description": "Описание переменных окружения для MCP Finance Server (Go)",
+    "usage": {
+      "docker": "Передавайте переменные через -e или --env-file",
+      "local": "Создайте файл .env в корне проекта или экспортируйте переменные в shell",
+      "example": ".env.example содержит примеры всех переменных"
+    },
+    "notes": [
+      "Все переменные опциональны и имеют значения по умолчанию",
+      "Для продакшена рекомендуется установить OTEL_ENDPOINT для сбора трейсов",
+      "Лимиты (MAX_*) можно настроить в зависимости от требований безопасности"
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+__all__ = ("router",)
+
+from aiogram import Router
+from .common import router as common_router
+
+
+router = Router(name=__name__)
+
+# router.include_routers()
+
+# this one must be the last!
+router.include_router(common_router)

@@ -1,0 +1,51 @@
+include:
+  - project: products/evo-ai-assistant/deepops/ci-cd/templates
+    file: /entries/custom.yml
+
+
+stages:
+  - security-scan:code
+  - build
+
+
+variables:
+  IMAGE_TAG_FULL: "${CI_COMMIT_TAG}"
+
+
+#######################################################################
+
+.__template_rules:
+  rules:
+    - if: '$CI_COMMIT_TAG != null'
+
+
+#######################################################################
+
+.__template_build_image_base: &template_build_image_base
+  stage: build
+  extends:
+    - .__template_rules
+    - .default-build-image-kaniko
+  script:
+    - /kaniko/executor 
+      --verbosity=info
+      --log-timestamp
+      --push-retry=10
+      --ignore-var-run
+      --single-snapshot
+      --custom-platform=linux/amd64
+      --context .
+      --dockerfile Dockerfile
+      --label CI_PROJECT_NAME=$CI_PROJECT_NAME_FULL
+      --label CI_PIPELINE_ID=$CI_PIPELINE_ID
+      --destination $CI_CONTAINER_REGISTRY_FULL:$IMAGE_TAG_FULL
+
+
+#######################################################################
+
+
+build-image:
+  <<: *template_build_image_base
+  variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+    GIT_SUBMODULE_DEPTH: 1
