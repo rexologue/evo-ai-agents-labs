@@ -1,0 +1,16 @@
+{
+  "tools": [
+    {
+      "name": "create_company_profile",
+      "description": "Создать новый профиль компании и сохранить его в PostgreSQL"
+    },
+    {
+      "name": "get_company_profile",
+      "description": "Получить профиль компании по UUID"
+    },
+    {
+      "name": "list_company_profiles",
+      "description": "Список профилей компаний с поиском и пагинацией"
+    }
+  ]
+}
