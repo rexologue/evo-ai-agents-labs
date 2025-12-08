@@ -8,26 +8,21 @@ tools:
     parameters:
       description: "string - Описание компании"
 rawEnvs:
-  PORT:
-    isRequired: false
-    description: "Порт MCP сервера"
-    defaultValue: "8000"
-  HOST:
-    isRequired: false
-    description: "Хост MCP сервера"
-    defaultValue: "0.0.0.0"
+  AGENT_HOST:
+    isRequired: true
+    description: "Хост HTTP транспорта агента"
+  AGENT_PORT:
+    isRequired: true
+    description: "Порт HTTP транспорта агента"
   LLM_MODEL:
-    isRequired: false
+    isRequired: true
     description: "Имя модели LLM"
-    defaultValue: "gpt-4o-mini"
   LLM_API_BASE:
-    isRequired: false
+    isRequired: true
     description: "Базовый URL для LLM"
-    defaultValue: "https://api.openai.com/v1"
   DB_MCP_URL:
-    isRequired: false
+    isRequired: true
     description: "URL MCP сервера db-mcp"
-    defaultValue: "http://localhost:8000"
 secretEnvs:
   LLM_API_KEY:
     isRequired: true
@@ -38,7 +33,7 @@ tags: ["llm", "profiles"]
 category: "agent"
 versions: ["0.1.0"]
 exposed_ports:
-  - port: 8000
+  - port: 8001
     protocol: "HTTP"
 status: "MCP_SERVER_PREDEFINED_STATUS_AVAILABLE"
 type: "MCP_SERVER_PREDEFINED_TYPE_INTERNAL"

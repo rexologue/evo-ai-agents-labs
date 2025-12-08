@@ -18,14 +18,12 @@ tools:
       limit: "integer - Количество элементов"
       offset: "integer - Смещение"
 rawEnvs:
-  PORT:
-    isRequired: false
-    description: "Порт MCP сервера"
-    defaultValue: "8000"
-  HOST:
-    isRequired: false
-    description: "Хост MCP сервера"
-    defaultValue: "0.0.0.0"
+  DB_MCP_HOST:
+    isRequired: true
+    description: "Хост HTTP транспорта MCP"
+  DB_MCP_PORT:
+    isRequired: true
+    description: "Порт HTTP транспорта MCP"
 secretEnvs:
   DB_PASSWORD:
     isRequired: true

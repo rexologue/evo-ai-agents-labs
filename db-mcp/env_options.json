@@ -1,23 +1,12 @@
 {
   "rawEnvs": {
-    "PORT": {
-      "isRequired": false,
-      "description": "Порт MCP сервера",
-      "defaultValue": "8000"
-    },
-    "HOST": {
-      "isRequired": false,
-      "description": "Хост MCP сервера",
-      "defaultValue": "0.0.0.0"
-    },
     "DB_HOST": {
       "isRequired": true,
       "description": "Хост PostgreSQL"
     },
     "DB_PORT": {
       "isRequired": true,
-      "description": "Порт PostgreSQL",
-      "defaultValue": "5432"
+      "description": "Порт PostgreSQL"
     },
     "DB_NAME": {
       "isRequired": true,
@@ -25,8 +14,15 @@
     },
     "DB_USER": {
       "isRequired": true,
-      "description": "Пользователь базы данных",
-      "defaultValue": "postgres"
+      "description": "Пользователь базы данных"
+    },
+    "DB_MCP_HOST": {
+      "isRequired": true,
+      "description": "Хост HTTP транспорта MCP"
+    },
+    "DB_MCP_PORT": {
+      "isRequired": true,
+      "description": "Порт HTTP транспорта MCP"
     }
   },
   "secretEnvs": {
