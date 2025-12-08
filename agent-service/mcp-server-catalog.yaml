@@ -1,0 +1,44 @@
+id: "agent-service"
+name: "agent-service"
+description: |
+  MCP сервер для генерации профиля компании с помощью LLM и сохранения через db-mcp.
+tools:
+  - name: "generate_company_profile"
+    description: "Сгенерировать и сохранить профиль компании"
+    parameters:
+      description: "string - Описание компании"
+rawEnvs:
+  PORT:
+    isRequired: false
+    description: "Порт MCP сервера"
+    defaultValue: "8000"
+  HOST:
+    isRequired: false
+    description: "Хост MCP сервера"
+    defaultValue: "0.0.0.0"
+  LLM_MODEL:
+    isRequired: false
+    description: "Имя модели LLM"
+    defaultValue: "gpt-4o-mini"
+  LLM_API_BASE:
+    isRequired: false
+    description: "Базовый URL для LLM"
+    defaultValue: "https://api.openai.com/v1"
+  DB_MCP_URL:
+    isRequired: false
+    description: "URL MCP сервера db-mcp"
+    defaultValue: "http://localhost:8000"
+secretEnvs:
+  LLM_API_KEY:
+    isRequired: true
+    description: "API ключ для LLM"
+image_uri: ${IMAGE_URI}
+license_url: "https://opensource.org/license/mit"
+tags: ["llm", "profiles"]
+category: "agent"
+versions: ["0.1.0"]
+exposed_ports:
+  - port: 8000
+    protocol: "HTTP"
+status: "MCP_SERVER_PREDEFINED_STATUS_AVAILABLE"
+type: "MCP_SERVER_PREDEFINED_TYPE_INTERNAL"

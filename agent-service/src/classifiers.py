@@ -1,3 +1,5 @@
+"""Классификатор ОКПД2 с LLM и эвристикой."""
+
 from __future__ import annotations
 
 import json
@@ -12,6 +14,8 @@ from .okpd2_index import OKPD2_INDEX
 
 
 def select_top_candidates(profile: CompanyProfileBase, top_n: int = 20) -> List[Okpd2Item]:
+    """Отбирает топ-N кандидатов ОКПД2 по нечеткому совпадению."""
+
     combined_text = f"{profile.description} " + " ".join(profile.industries)
     scored = []
     for item in OKPD2_INDEX:
@@ -21,7 +25,11 @@ def select_top_candidates(profile: CompanyProfileBase, top_n: int = 20) -> List[
     return [item for _, item in scored[:top_n]]
 
 
-def classify_okpd2(profile: CompanyProfileBase, llm: ChatOpenAI, limit: int = 5) -> List[Okpd2Item]:
+async def classify_okpd2(
+    profile: CompanyProfileBase, llm: ChatOpenAI, limit: int = 5
+) -> List[Okpd2Item]:
+    """Классифицирует ОКПД2 коды с помощью LLM и списка кандидатов."""
+
     candidates = select_top_candidates(profile)
     candidate_lines = [f"{item.code} — {item.title}" for item in candidates]
     prompt = ChatPromptTemplate.from_messages(
@@ -34,7 +42,7 @@ def classify_okpd2(profile: CompanyProfileBase, llm: ChatOpenAI, limit: int = 5)
         ]
     )
     chain = prompt | llm
-    response = chain.invoke(
+    response = await chain.ainvoke(
         {
             "description": profile.description,
             "industries": ", ".join(profile.industries),

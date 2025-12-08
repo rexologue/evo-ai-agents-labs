@@ -1,3 +1,5 @@
+"""Утилиты работы с PostgreSQL для профилей компаний."""
+
 from __future__ import annotations
 
 import json
@@ -16,6 +18,8 @@ settings = get_settings()
 
 @contextmanager
 def get_conn():
+    """Создает подключение к PostgreSQL с автокоммитом."""
+
     conn = psycopg.connect(
         host=settings.db_host,
         port=settings.db_port,
@@ -31,6 +35,8 @@ def get_conn():
 
 
 def ensure_tables() -> None:
+    """Создает таблицы, если их еще нет."""
+
     create_sql = """
     CREATE TABLE IF NOT EXISTS companies (
         id UUID PRIMARY KEY,
@@ -47,6 +53,8 @@ def ensure_tables() -> None:
 
 
 def map_row_to_profile(row: Iterable[Any]) -> CompanyProfileDB:
+    """Преобразует строку БД в модель CompanyProfileDB."""
+
     (
         company_id,
         name,
@@ -73,6 +81,8 @@ def map_row_to_profile(row: Iterable[Any]) -> CompanyProfileDB:
 
 
 def insert_company_profile(profile: CompanyProfileBase) -> CompanyProfileDB:
+    """Сохраняет профиль компании в PostgreSQL."""
+
     now = datetime.utcnow()
     company_id = uuid4()
     profile_dict = json.loads(profile.model_dump_json())
@@ -101,6 +111,8 @@ def insert_company_profile(profile: CompanyProfileBase) -> CompanyProfileDB:
 
 
 def fetch_company_profile(company_id: str) -> CompanyProfileDB:
+    """Возвращает профиль компании по идентификатору."""
+
     sql = """
     SELECT id, name, description, profile_json, created_at, updated_at
     FROM companies
@@ -116,6 +128,8 @@ def fetch_company_profile(company_id: str) -> CompanyProfileDB:
 
 
 def fetch_company_profiles(query: str | None, limit: int, offset: int) -> list[CompanyProfileDB]:
+    """Возвращает список профилей компаний с поиском и пагинацией."""
+
     sql = """
     SELECT id, name, description, profile_json, created_at, updated_at
     FROM companies

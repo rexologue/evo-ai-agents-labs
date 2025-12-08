@@ -1,20 +1,35 @@
 {
-  "env": {
-    "LLM_MODEL": {
-      "description": "Имя модели LLM",
-      "default": "gpt-4o-mini"
+  "rawEnvs": {
+    "PORT": {
+      "isRequired": false,
+      "description": "Порт MCP сервера",
+      "defaultValue": "8000"
     },
-    "LLM_API_KEY": {
-      "description": "API ключ для LLM",
-      "required": true
+    "HOST": {
+      "isRequired": false,
+      "description": "Хост MCP сервера",
+      "defaultValue": "0.0.0.0"
+    },
+    "LLM_MODEL": {
+      "isRequired": false,
+      "description": "Имя модели LLM",
+      "defaultValue": "gpt-4o-mini"
     },
     "LLM_API_BASE": {
+      "isRequired": false,
       "description": "Базовый URL для LLM совместимого с OpenAI",
-      "default": "https://api.openai.com/v1"
+      "defaultValue": "https://api.openai.com/v1"
     },
     "DB_MCP_URL": {
-      "description": "URL MCP сервера db-mcp (например http://localhost:8000)",
-      "default": "http://localhost:8000"
+      "isRequired": false,
+      "description": "URL MCP сервера db-mcp",
+      "defaultValue": "http://localhost:8000"
+    }
+  },
+  "secretEnvs": {
+    "LLM_API_KEY": {
+      "isRequired": true,
+      "description": "API ключ для LLM"
     }
   }
 }
