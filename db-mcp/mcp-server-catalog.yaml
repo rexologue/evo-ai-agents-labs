@@ -1,0 +1,54 @@
+id: "db-mcp"
+name: "db-mcp"
+description: |
+  MCP сервер для работы с профилями компаний в PostgreSQL.
+tools:
+  - name: "create_company_profile"
+    description: "Создать профиль компании"
+    parameters:
+      profile: "object - Структурированный профиль компании"
+  - name: "get_company_profile"
+    description: "Получить профиль компании по UUID"
+    parameters:
+      company_id: "string - UUID компании"
+  - name: "list_company_profiles"
+    description: "Получить список профилей с поиском"
+    parameters:
+      query: "string - Поисковый запрос"
+      limit: "integer - Количество элементов"
+      offset: "integer - Смещение"
+rawEnvs:
+  PORT:
+    isRequired: false
+    description: "Порт MCP сервера"
+    defaultValue: "8000"
+  HOST:
+    isRequired: false
+    description: "Хост MCP сервера"
+    defaultValue: "0.0.0.0"
+secretEnvs:
+  DB_PASSWORD:
+    isRequired: true
+    description: "Пароль пользователя PostgreSQL"
+  DB_HOST:
+    isRequired: true
+    description: "Хост PostgreSQL"
+  DB_PORT:
+    isRequired: true
+    description: "Порт PostgreSQL"
+  DB_NAME:
+    isRequired: true
+    description: "Имя базы данных"
+  DB_USER:
+    isRequired: true
+    description: "Пользователь базы данных"
+image_uri: ${IMAGE_URI}
+license_url: "https://opensource.org/license/mit"
+tags: ["postgresql", "profiles"]
+category: "database"
+versions: ["0.1.0"]
+exposed_ports:
+  - port: 8000
+    protocol: "HTTP"
+status: "MCP_SERVER_PREDEFINED_STATUS_AVAILABLE"
+type: "MCP_SERVER_PREDEFINED_TYPE_INTERNAL"
