@@ -1,0 +1,50 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:14
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-agents}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  db-mcp:
+    build:
+      context: ../db-mcp
+    restart: unless-stopped
+    environment:
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${DB_NAME:-agents}
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      PORT: ${DB_MCP_PORT:-8000}
+      HOST: ${DB_MCP_HOST:-0.0.0.0}
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+
+  agent-service:
+    build: .
+    restart: unless-stopped
+    environment:
+      LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY is required}
+      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      LLM_API_BASE: ${LLM_API_BASE:-https://api.openai.com/v1}
+      DB_MCP_URL: ${DB_MCP_URL:-http://db-mcp:8000}
+      PORT: ${PORT:-8001}
+      HOST: ${HOST:-0.0.0.0}
+    depends_on:
+      - db-mcp
+    ports:
+      - "8001:8001"
+
+volumes:
+  pgdata:
+    driver: local
