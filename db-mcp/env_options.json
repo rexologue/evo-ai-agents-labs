@@ -1,0 +1,28 @@
+{
+  "env": {
+    "PORT": {
+      "description": "HTTP port for MCP server",
+      "default": "8000"
+    },
+    "DB_HOST": {
+      "description": "PostgreSQL host",
+      "default": "localhost"
+    },
+    "DB_PORT": {
+      "description": "PostgreSQL port",
+      "default": "5432"
+    },
+    "DB_NAME": {
+      "description": "PostgreSQL database name",
+      "default": "agents"
+    },
+    "DB_USER": {
+      "description": "PostgreSQL user",
+      "default": "postgres"
+    },
+    "DB_PASSWORD": {
+      "description": "PostgreSQL password",
+      "default": "postgres"
+    }
+  }
+}

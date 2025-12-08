@@ -1,0 +1,20 @@
+{
+  "env": {
+    "LLM_MODEL": {
+      "description": "Имя модели LLM",
+      "default": "gpt-4o-mini"
+    },
+    "LLM_API_KEY": {
+      "description": "API ключ для LLM",
+      "required": true
+    },
+    "LLM_API_BASE": {
+      "description": "Базовый URL для LLM совместимого с OpenAI",
+      "default": "https://api.openai.com/v1"
+    },
+    "DB_MCP_URL": {
+      "description": "URL MCP сервера db-mcp (например http://localhost:8000)",
+      "default": "http://localhost:8000"
+    }
+  }
+}
