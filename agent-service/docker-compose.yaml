@@ -4,47 +4,66 @@ services:
   db:
     image: postgres:14
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      POSTGRES_DB: ${DB_NAME:-agents}
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
-      - "5432:5432"
+      - "${DB_PORT}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - db_net
 
   db-mcp:
     build:
       context: ../db-mcp
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      DB_HOST: ${DB_HOST:-db}
-      DB_PORT: ${DB_PORT:-5432}
-      DB_NAME: ${DB_NAME:-agents}
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-postgres}
-      PORT: ${DB_MCP_PORT:-8000}
-      HOST: ${DB_MCP_HOST:-0.0.0.0}
+      DB_HOST: ${DB_HOST}
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_MCP_PORT: ${DB_MCP_PORT}
+      DB_MCP_HOST: ${DB_MCP_HOST}
     depends_on:
       - db
     ports:
-      - "8000:8000"
+      - "${DB_MCP_PORT}:${DB_MCP_PORT}"
+    networks:
+      - db_net
+      - mcp_net
 
   agent-service:
     build: .
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      LLM_API_KEY: ${LLM_API_KEY:?LLM_API_KEY is required}
-      LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
-      LLM_API_BASE: ${LLM_API_BASE:-https://api.openai.com/v1}
-      DB_MCP_URL: ${DB_MCP_URL:-http://db-mcp:8000}
-      PORT: ${PORT:-8001}
-      HOST: ${HOST:-0.0.0.0}
+      LLM_API_KEY: ${LLM_API_KEY}
+      LLM_MODEL: ${LLM_MODEL}
+      LLM_API_BASE: ${LLM_API_BASE}
+      DB_MCP_URL: ${DB_MCP_URL}
+      AGENT_PORT: ${AGENT_PORT}
+      AGENT_HOST: ${AGENT_HOST}
     depends_on:
       - db-mcp
     ports:
-      - "8001:8001"
+      - "${AGENT_PORT}:${AGENT_PORT}"
+    networks:
+      - mcp_net
 
 volumes:
   pgdata:
     driver: local
+
+networks:
+  db_net:
+    driver: bridge
+  mcp_net:
+    driver: bridge
