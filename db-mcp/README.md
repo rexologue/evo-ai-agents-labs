@@ -34,6 +34,12 @@ cp .env.example .env
 python -m src.server
 ```
 
+## Запуск из контейнера
+```bash
+docker buildx build --platform linux/amd64 -t db-mcp .
+docker run --rm --network host db-mcp
+```
+
 После запуска сервер будет доступен по адресу из `.env` (`DB_MCP_HOST` + `DB_MCP_PORT`)
 с транспортом `streamable-http`.
 

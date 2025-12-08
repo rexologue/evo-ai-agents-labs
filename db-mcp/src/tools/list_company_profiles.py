@@ -4,14 +4,11 @@ from __future__ import annotations
 
 from fastmcp import Context
 from mcp.types import TextContent
-from opentelemetry import trace
 from pydantic import Field
 
-from ..db import ensure_tables, fetch_company_profiles
-from ..mcp_instance import mcp
-from .utils import ToolResult, _require_env_vars
-
-tracer = trace.get_tracer(__name__)
+from db import ensure_tables, fetch_company_profiles
+from mcp_instance import mcp
+from tools.utils import ToolResult, _require_env_vars
 
 
 @mcp.tool(
@@ -40,28 +37,20 @@ async def list_company_profiles(
 
     _require_env_vars(["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"])
 
-    with tracer.start_as_current_span("list_company_profiles") as span:
-        span.set_attribute("query", query or "")
-        span.set_attribute("limit", limit)
-        span.set_attribute("offset", offset)
+    await ctx.info("📑 Получаем список профилей компаний")
+    await ctx.report_progress(progress=0, total=100)
 
-        await ctx.info("📑 Получаем список профилей компаний")
-        await ctx.report_progress(progress=0, total=100)
+    ensure_tables()
+    await ctx.report_progress(progress=25, total=100)
 
-        ensure_tables()
-        await ctx.report_progress(progress=25, total=100)
+    profiles = fetch_company_profiles(query, limit, offset)
+    await ctx.report_progress(progress=100, total=100)
+    await ctx.info(f"✅ Найдено профилей: {len(profiles)}")
 
-        profiles = fetch_company_profiles(query, limit, offset)
-        await ctx.report_progress(progress=100, total=100)
-        await ctx.info(f"✅ Найдено профилей: {len(profiles)}")
+    formatted = "\n".join([f"- {profile.name}" for profile in profiles]) or "Нет записей"
 
-        span.set_attribute("success", True)
-        span.set_attribute("count", len(profiles))
-
-        formatted = "\n".join([f"- {profile.name}" for profile in profiles]) or "Нет записей"
-
-        return ToolResult(
-            content=[TextContent(type="text", text=formatted)],
-            structured_content={"items": [p.model_dump() for p in profiles]},
-            meta={"operation": "list_company_profiles"},
-        )
+    return ToolResult(
+        content=[TextContent(type="text", text=formatted)],
+        structured_content={"items": [p.model_dump() for p in profiles]},
+        meta={"operation": "list_company_profiles"},
+    )

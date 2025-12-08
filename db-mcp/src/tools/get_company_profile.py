@@ -5,14 +5,11 @@ from __future__ import annotations
 from fastmcp import Context
 from mcp.shared.exceptions import ErrorData, McpError
 from mcp.types import TextContent
-from opentelemetry import trace
 from pydantic import Field
 
-from ..db import ensure_tables, fetch_company_profile
-from ..mcp_instance import mcp
-from .utils import ToolResult, _require_env_vars
-
-tracer = trace.get_tracer(__name__)
+from db import ensure_tables, fetch_company_profile
+from mcp_instance import mcp
+from tools.utils import ToolResult, _require_env_vars
 
 
 @mcp.tool(
@@ -38,34 +35,31 @@ async def get_company_profile(
 
     _require_env_vars(["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"])
 
-    with tracer.start_as_current_span("get_company_profile") as span:
-        span.set_attribute("company.id", company_id)
-        await ctx.info("🔎 Ищем профиль компании")
-        await ctx.report_progress(progress=0, total=100)
+    await ctx.info("🔎 Ищем профиль компании")
+    await ctx.report_progress(progress=0, total=100)
 
-        ensure_tables()
-        await ctx.report_progress(progress=25, total=100)
+    ensure_tables()
+    await ctx.report_progress(progress=25, total=100)
 
-        try:
-            profile = fetch_company_profile(company_id)
-        except ValueError as exc:
-            await ctx.error(f"❌ Компания с id {company_id} не найдена")
-            span.set_attribute("error", str(exc))
-            raise McpError(
-                ErrorData(code=-32601, message=f"Компания {company_id} не найдена")
-            )
+    try:
+        profile = fetch_company_profile(company_id)
+    except ValueError as exc:
+        await ctx.error(f"❌ Компания с id {company_id} не найдена")
 
-        await ctx.report_progress(progress=100, total=100)
-        await ctx.info("✅ Профиль найден")
-        span.set_attribute("success", True)
-
-        return ToolResult(
-            content=[
-                TextContent(
-                    type="text",
-                    text=f"Компания {profile.name}: {profile.description}",
-                )
-            ],
-            structured_content=profile.model_dump(),
-            meta={"operation": "get_company_profile"},
+        raise McpError(
+            ErrorData(code=-32601, message=f"Компания {company_id} не найдена")
         )
+
+    await ctx.report_progress(progress=100, total=100)
+    await ctx.info("✅ Профиль найден")
+
+    return ToolResult(
+        content=[
+            TextContent(
+                type="text",
+                text=f"Компания {profile.name}: {profile.description}",
+            )
+        ],
+        structured_content=profile.model_dump(),
+        meta={"operation": "get_company_profile"},
+    )

@@ -10,8 +10,8 @@ from uuid import uuid4
 
 import psycopg
 
-from .config import get_settings
-from .models import CompanyProfileBase, CompanyProfileDB
+from config import get_settings
+from models import CompanyProfileBase, CompanyProfileDB
 
 settings = get_settings()
 
@@ -130,18 +130,29 @@ def fetch_company_profile(company_id: str) -> CompanyProfileDB:
 def fetch_company_profiles(query: str | None, limit: int, offset: int) -> list[CompanyProfileDB]:
     """Возвращает список профилей компаний с поиском и пагинацией."""
 
-    sql = """
+    base_sql = """
     SELECT id, name, description, profile_json, created_at, updated_at
     FROM companies
-    WHERE (%s IS NULL OR name ILIKE %s OR description ILIKE %s)
-    ORDER BY created_at DESC
-    LIMIT %s OFFSET %s;
     """
-    like = f"%{query}%" if query else None
-    params = (query, like, like, limit, offset)
 
     with get_conn() as conn:
         with conn.cursor() as cur:
+            if query:
+                like = f"%{query}%"
+                sql = base_sql + """
+                WHERE name ILIKE %s OR description ILIKE %s
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s;
+                """
+                params = (like, like, limit, offset)
+            else:
+                sql = base_sql + """
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s;
+                """
+                params = (limit, offset)
+
             cur.execute(sql, params)
             rows = cur.fetchall()
             return [map_row_to_profile(row) for row in rows]
+

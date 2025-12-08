@@ -1,4 +1,17 @@
-from pydantic import BaseSettings, Field
+import os
+import logging
+from pydantic import Field
+from pydantic_settings import BaseSettings
+
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv())
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("db-mcp")
 
 
 class Settings(BaseSettings):
@@ -10,10 +23,14 @@ class Settings(BaseSettings):
     server_port: int = Field(..., alias="DB_MCP_PORT")
     server_host: str = Field(..., alias="DB_MCP_HOST")
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-
 
 def get_settings() -> Settings:
-    return Settings()
+    return Settings(
+        os.getenv("DB_HOST"),
+        os.getenv("DB_PORT"),
+        os.getenv("DB_NAME"),
+        os.getenv("DB_USER"),
+        os.getenv("DB_PASSWORD"),
+        os.getenv("DB_MCP_PORT"),
+        os.getenv("DB_MCP_HOST")
+    )
