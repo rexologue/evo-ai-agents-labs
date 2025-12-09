@@ -7,11 +7,6 @@ MCP сервер для работы с профилями компаний и �
 - `get_company_profile` — возвращает профиль компании по UUID.
 - `list_company_profiles` — выводит список профилей с поиском и пагинацией.
 
-## 📋 Требования
-- Python 3.11+
-- PostgreSQL 14+
-- Зависимости из `pyproject.toml`
-
 ## 🔧 Переменные окружения
 
 Все переменные должны быть заданы в `.env` (см. `.env.example`). В коде и в docker-compose нет значений по умолчанию.
@@ -25,18 +20,10 @@ MCP сервер для работы с профилями компаний и �
 - `DB_MCP_HOST` — хост HTTP транспорта MCP
 - `DB_MCP_PORT` — порт HTTP транспорта MCP
 
-## 🚀 Локальный запуск
-```bash
-cd db-mcp
-pip install -e .
-cp .env.example .env
-# отредактируйте .env при необходимости
-python -m src.server
-```
 
 ## Запуск из контейнера
 ```bash
-docker buildx build --platform linux/amd64 -t db-mcp .
+docker buildx build --platform linux/amd64 -t db-mcp -f Dockerfile ..
 docker run --rm --network host --env-file .env db-mcp
 ```
 
@@ -48,4 +35,10 @@ docker run --rm --network host --env-file .env db-mcp
 - `get_company_profile(company_id)` — отдает профиль по UUID.
 - `list_company_profiles(query?, limit?, offset?)` — список профилей с поиском.
 
-Полное описание аргументов доступно в `mcp_tools.json` и `mcp-server-catalog.yaml`.
+Полное описание аргументов доступно в `mcp_tools.json`.
+
+## Публикация на Cloud.ru
+```bash
+docker tag db-mcp:latest cloudru-labs.cr.cloud.ru/your-registerd-repo:v1.0.0
+docker push cloudru-labs.cr.cloud.ru/your-registerd-repo:v1.0.0
+```

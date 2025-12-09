@@ -11,15 +11,15 @@ RUN apt-get update && apt-get install -y \
     && pip install --no-cache-dir uv
 
 # Копируем файлы конфигурации uv сначала для лучшего кеширования Docker слоев
-COPY pyproject.toml ./
+COPY db-mcp/pyproject.toml ./pyproject.toml
 
 # Создаем виртуальное окружение и устанавливаем зависимости
 # Используем тот же подход, что и локально
 RUN uv sync --no-editable
 
 # Копируем исходный код приложения
-COPY src/ ./src/
-COPY ../models.py ./src/models.py
+COPY db-mcp/src/ ./src/
+COPY models.py ./src/models.py
 
 # Создаем непривилегированного пользователя для безопасности
 RUN useradd --create-home --shell /bin/bash --uid 1000 mcp && \
