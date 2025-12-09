@@ -140,6 +140,7 @@ class LangChainA2AWrapper:
         """
         try:
             chat_history = self._get_session_history(session_id)
+            logger.info("LC-A2A stream: session_id=%s, history_len(before)=%d", session_id, len(chat_history))
             full_response = ""
 
             # LangChain AgentExecutor поддерживает astream
@@ -189,6 +190,8 @@ class LangChainA2AWrapper:
                 chat_history.append(HumanMessage(content=query))
             if clean_full:
                 chat_history.append(AIMessage(content=clean_full))
+                
+            logger.debug("LC-A2A stream: session_id=%s, history_len(after)=%d", session_id, len(chat_history))
 
             # Готовим финальный payload
             if not full_response or clean_full != full_response:
