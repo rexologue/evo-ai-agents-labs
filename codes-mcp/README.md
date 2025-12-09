@@ -1,6 +1,6 @@
 ## Запуск из контейнера
 ```bash
-docker buildx build --platform linux/amd64 -t codes-mcp .
+docker buildx build --platform linux/amd64 -t codes-mcp -f Dockerfile ..
 docker run --rm --network host --env-file .env codes-mcp
 ```
 

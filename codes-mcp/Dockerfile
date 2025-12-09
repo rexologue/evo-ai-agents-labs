@@ -19,6 +19,8 @@ RUN uv sync --no-editable
 
 # Копируем исходный код приложения
 COPY codes-mcp/src/ ./src/
+COPY codes-mcp/okpd2.csv ./src/okpd2.csv
+COPY codes-mcp/regions.csv ./src/regions.csv
 COPY models.py ./src/models.py
 
 # Создаем непривилегированного пользователя для безопасности

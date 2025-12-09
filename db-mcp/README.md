@@ -36,7 +36,7 @@ python -m src.server
 
 ## Запуск из контейнера
 ```bash
-docker buildx build --platform linux/amd64 -t db-mcp .
+docker buildx build --platform linux/amd64 -t db-mcp -f Dockerfile ..
 docker run --rm --network host --env-file .env db-mcp
 ```
 
