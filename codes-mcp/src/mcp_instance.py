@@ -2,6 +2,4 @@
 
 from fastmcp import FastMCP
 
-mcp = FastMCP(
-    "PostgreSQL-backed MCP for company profiles",
-)
+mcp = FastMCP("MCP for accesing OKPD2 and regions codes")

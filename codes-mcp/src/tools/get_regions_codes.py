@@ -7,7 +7,7 @@ from mcp.types import TextContent
 from pydantic import Field
 
 from mcp_instance import mcp
-from tools.utils import format_region_index, REGION_INDEX, ToolResult
+from tools.utils import format_region_index, to_dict_region_index, REGION_INDEX, ToolResult
 
 
 @mcp.tool(
@@ -28,7 +28,7 @@ async def get_regions_codes(ctx: Context = None) -> ToolResult:
 
     return ToolResult(
         content=[TextContent(type="text", text=regions_table)],
-        structured_content=REGION_INDEX,
+        structured_content=to_dict_region_index(),
         meta={
             "operation": "get_regions_codes",
             "count": len(REGION_INDEX),

@@ -17,7 +17,7 @@ settings = get_settings()
 # Импортируем инструменты (как и раньше)
 print("🔧 Загружаем инструменты...")
 try:
-    from tools.get_okdp2_codes import get_okpd2_codes
+    from tools.get_okpd2_codes import get_okpd2_codes
     print("✅ get_okpd2_codes загружен")
 except Exception as e:
     print(f"❌ Ошибка импорта get_okpd2_codes: {e}")

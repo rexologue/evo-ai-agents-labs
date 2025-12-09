@@ -7,7 +7,7 @@ from mcp.types import TextContent
 from pydantic import Field
 
 from mcp_instance import mcp
-from tools.utils import format_okpd2_index, OKPD2_INDEX, ToolResult
+from tools.utils import format_okpd2_index, to_dict_okpd2_index, OKPD2_INDEX, ToolResult
 
 
 @mcp.tool(
@@ -29,7 +29,7 @@ async def get_okpd2_codes(ctx: Context = None) -> ToolResult:
 
     return ToolResult(
         content=[TextContent(type="text", text=okpd2_table)],
-        structured_content=OKPD2_INDEX,
+        structured_content=to_dict_okpd2_index(),
         meta={
             "operation": "get_okpd2_codes",
             "count": len(OKPD2_INDEX),

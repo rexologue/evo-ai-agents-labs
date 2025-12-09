@@ -69,6 +69,24 @@ def format_region_index() -> str:
     return pretty_regions[:-1]
 
 
+def to_dict_okpd2_index() -> dict[str, str]:
+    d = {}
+    
+    for item in OKPD2_INDEX:
+        d[item.code] = item.title
+        
+    return d
+
+
+def to_dict_region_index() -> dict[str, str]:
+    d = {}
+    
+    for item in REGION_INDEX:
+        d[item.code] = item.title
+        
+    return d
+
+
 @dataclass
 class ToolResult:
     """Стандартный ответ MCP инструмента."""
