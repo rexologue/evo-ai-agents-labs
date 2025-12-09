@@ -11,7 +11,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_mcp_adapters.client import MultiServerMCPClient  # MCP <-> LangChain
 
 from config import get_settings
-from base_prompt import BASE_BEHAVIOR_PROMPT
+from base_prompt import BASE_SYSTEM_PROMPT
 from tools.okpd2_tool import build_okpd2_tool
 
 settings = get_settings()
@@ -109,13 +109,8 @@ def create_langchain_agent(mcp_urls: Optional[str] = None) -> AgentExecutor:
 
     tools: List[BaseTool] = [*mcp_tools, okpd2_tool]
 
-    # Системный промпт: env + поведенческий
-    system_prompt = (settings.agent_sys_prompt or "").strip()
-    
-    if system_prompt:
-        system_prompt = system_prompt + "\n\n" + BASE_BEHAVIOR_PROMPT
-    else:
-        system_prompt = BASE_BEHAVIOR_PROMPT
+    # Системный промпт задается статически через base_prompt
+    system_prompt = BASE_SYSTEM_PROMPT
 
     prompt = ChatPromptTemplate.from_messages(
         [

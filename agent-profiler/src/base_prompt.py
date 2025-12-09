@@ -1,12 +1,13 @@
-import json
-from pydantic import BaseModel, Field
+from __future__ import annotations
 
-from models import CompanyProfileBase, CompanyProfileDB, Okpd2Item
+import json
+from pydantic import BaseModel
+
+from models import CompanyProfileBase, Okpd2Item
+
 
 def _format_fields_for_prompt(model: type[BaseModel]) -> str:
-    """
-    Генерирует человекочитаемый список полей для промпта на основе Pydantic-модели.
-    """
+    """Генерирует человекочитаемый список полей для промпта на основе Pydantic-модели."""
     lines: list[str] = []
     for name, field in model.model_fields.items():
         required = field.is_required()
@@ -18,9 +19,7 @@ def _format_fields_for_prompt(model: type[BaseModel]) -> str:
 
 
 def _build_example_json(model: type[BaseModel]) -> str:
-    """
-    Генерирует небольшой пример JSON-профиля для промпта.
-    """
+    """Генерирует небольшой пример JSON-профиля для промпта."""
     example = model(
         name="ООО «Честный взгляд»",
         description="Компания из Красноярска, производит кухонную мебель и выполняет установку кухонь.",
@@ -30,7 +29,10 @@ def _build_example_json(model: type[BaseModel]) -> str:
         industries=["производство мебели", "установка кухонь", "мебель под заказ"],
         resources=["собственный производственный цех", "сеть магазинов по Красноярску"],
         risk_tolerance="low",
-        okpd2_codes=["31.02", "43.32"],
+        okpd2_codes=[
+            Okpd2Item(code="31.02", title="Производство кухонной мебели"),
+            Okpd2Item(code="43.32", title="Установка столярных изделий"),
+        ],
     )
     return json.dumps(example.model_dump(), ensure_ascii=False, indent=2)
 
@@ -67,6 +69,7 @@ Here is an example JSON object that follows this schema:
 
 ```json
 {example_json}
+```
 You MUST respect the field names exactly as shown above. Do NOT invent new top-level fields.
 
 Interaction phases
@@ -163,15 +166,19 @@ Remember:
 The final message after saving MUST NOT contain <NEED_USER_INPUT> and MUST clearly show the profile ID.
 """
 
+
 def build_system_prompt() -> str:
-   """
-   Строит финальный системный промпт на основе Pydantic-модели CompanyProfileInput.
-   Если ты поменяешь поля/описания в модели, промпт автоматически обновится.
-   """
-   fields_spec = _format_fields_for_prompt(CompanyProfileInput)
-   example_json = _build_example_json(CompanyProfileInput)
-   
-   return _BASE_SYSTEM_PROMPT_TEMPLATE.format(
-   fields_spec=fields_spec,
-   example_json=example_json,
-   )
+    """
+    Строит финальный системный промпт на основе Pydantic-модели CompanyProfileBase.
+    Если ты поменяешь поля/описания в модели, промпт автоматически обновится.
+    """
+    fields_spec = _format_fields_for_prompt(CompanyProfileBase)
+    example_json = _build_example_json(CompanyProfileBase)
+
+    return _BASE_SYSTEM_PROMPT_TEMPLATE.format(
+        fields_spec=fields_spec,
+        example_json=example_json,
+    )
+
+
+BASE_SYSTEM_PROMPT = build_system_prompt()

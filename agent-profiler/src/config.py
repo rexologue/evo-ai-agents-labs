@@ -1,6 +1,5 @@
 import os
 import logging
-from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv, find_dotenv
@@ -48,12 +47,6 @@ class Settings(BaseSettings):
 
     agent_version: str = Field("v1.0.0", alias="AGENT_VERSION")
 
-    # ---- System prompt ----
-    agent_sys_prompt: Optional[str] = Field(None, alias="AGENT_SYSTEM_PROMPT")
-
-    # Путь до файла, если задан
-    agent_sys_prompt_file: Optional[str] = Field(None, alias="AGENT_SYSTEM_PROMPT_FILE")
-
     class Config:
         populate_by_name = True
         extra = "ignore"
@@ -68,54 +61,11 @@ class Settings(BaseSettings):
         """
 
         # ----------------------------------------------------------
-        # 1) AGENT_URL → вычисляем, если не указан
+        # AGENT_URL → вычисляем, если не указан
         # ----------------------------------------------------------
         if not self.agent_url:
             self.agent_url = f"http://{self.agent_host}:{self.agent_port}"
             logger.debug(f"agent_url was empty → set to {self.agent_url}")
-
-        # ----------------------------------------------------------
-        # 2) System prompt → берём из переменной или файла
-        # ----------------------------------------------------------
-        # Если PROMPT уже задан в .env → просто чистим кавычки
-        if self.agent_sys_prompt:
-            cleaned = self.agent_sys_prompt.strip().strip('"').strip("'")
-            self.agent_sys_prompt = cleaned
-            logger.debug("Using AGENT_SYSTEM_PROMPT directly from env")
-            return
-
-        # Если PROMPT в .env не был задан → возможно есть файл
-        if self.agent_sys_prompt_file:
-            prompt_path = Path(self.agent_sys_prompt_file)
-
-            if not prompt_path.exists():
-                logger.warning(
-                    f"AGENT_SYSTEM_PROMPT_FILE is set but file does not exist: {prompt_path}"
-                )
-                self.agent_sys_prompt = self._default_prompt()
-                return
-
-            try:
-                text = prompt_path.read_text(encoding="utf-8").strip()
-                self.agent_sys_prompt = text
-                logger.debug(f"Loaded system prompt from file: {prompt_path}")
-                return
-            
-            except Exception as e:
-                logger.error(f"Failed to read {prompt_path}: {e}")
-                self.agent_sys_prompt = self._default_prompt()
-                return
-
-        # Ничего не задано → дефолт
-        self.agent_sys_prompt = self._default_prompt()
-
-    # --------------------------------------------------------------------------
-    @staticmethod
-    def _default_prompt() -> str:
-        return (
-            "Ты полезный AI-ассистент. Используй доступные инструменты для решения задач "
-            "пользователя, запрашивай уточнения, если данных недостаточно."
-        )
 
 
 # ------------------------------------------------------------------------------
