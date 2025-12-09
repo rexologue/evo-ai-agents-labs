@@ -10,6 +10,17 @@ from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 logger = logging.getLogger(__name__)
 
 
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_think_blocks(text: str) -> str:
+    """Удаляет из ответа скрытые блоки размышлений `<think>...</think>`."""
+    if not text:
+        return text
+
+    return _THINK_BLOCK_RE.sub("", text).strip()
+
+
 def _strip_need_input(text: str) -> tuple[str, bool]:
     """
     Убирает тег `<NEED_USER_INPUT>` и возвращает (очищенный_текст, нужен_ли_ответ_пользователя).
