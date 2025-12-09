@@ -64,19 +64,14 @@ def map_row_to_profile(row: Iterable[Any]) -> CompanyProfileDB:
         updated_at,
     ) = row
     base_profile = CompanyProfileBase(**profile_json)
+    profile_data = base_profile.model_dump()
+    profile_data["name"] = name
+    profile_data["description"] = description
     return CompanyProfileDB(
         id=company_id,
-        name=name,
-        description=description,
-        regions=base_profile.regions,
-        min_contract_price=base_profile.min_contract_price,
-        max_contract_price=base_profile.max_contract_price,
-        industries=base_profile.industries,
-        resources=base_profile.resources,
-        risk_tolerance=base_profile.risk_tolerance,
-        okpd2_codes=base_profile.okpd2_codes,
         created_at=created_at,
         updated_at=updated_at,
+        **profile_data,
     )
 
 
