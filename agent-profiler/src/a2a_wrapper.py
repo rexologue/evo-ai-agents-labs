@@ -41,11 +41,14 @@ class LangChainA2AWrapper:
     # Для совместимости с A2A
     SUPPORTED_CONTENT_TYPES = ["text", "text/plain"]
 
-    def __init__(self, agent_executor: AgentExecutor, auto_reset_on_complete: bool = True):
+    def __init__(self, agent_executor: AgentExecutor, auto_reset_on_complete: bool = False):
         self.agent_executor = agent_executor
         # ✅ история как список BaseMessage (HumanMessage / AIMessage)
         self.sessions: Dict[str, List[BaseMessage]] = {}
         # ✅ включаем/выключаем автоочистку сессии после завершения задачи
+        # По умолчанию автоочистка отключена, чтобы не терять контекст между
+        # запросами в интерактивных сценариях, где клиент может не передавать
+        # стабильный context_id и чат должен продолжаться с черновиком.
         self.auto_reset_on_complete = auto_reset_on_complete
 
     def _get_session_history(self, session_id: str) -> List[BaseMessage]:
