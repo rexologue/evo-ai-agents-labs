@@ -1,4 +1,0 @@
-services:
-  tg-bot:
-    build: .
-  

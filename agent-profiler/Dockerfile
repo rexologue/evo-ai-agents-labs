@@ -19,7 +19,7 @@ RUN uv sync --no-editable
 
 # Копируем исходный код приложения
 COPY src/ ./src/
-COPY SYSTEM.md ./SYSTEM.md
+COPY ../models.py ./src/models.py
 
 # Создаем непривилегированного пользователя для безопасности
 RUN useradd --create-home --shell /bin/bash --uid 1000 mcp && \
@@ -28,8 +28,8 @@ RUN useradd --create-home --shell /bin/bash --uid 1000 mcp && \
 # Переключаемся на непривилегированного пользователя
 USER mcp
 
-# Открываем порт для MCP сервера (см. server.py → 8000)
-EXPOSE 8000
+# Открываем порт для A2A сервера агента (AGENT_PORT по умолчанию 8001)
+EXPOSE 8001
 
 # Устанавливаем переменные окружения для оптимальной работы Python
 ENV PYTHONPATH=/app \

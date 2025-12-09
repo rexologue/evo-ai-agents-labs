@@ -19,6 +19,7 @@ RUN uv sync --no-editable
 
 # Копируем исходный код приложения
 COPY src/ ./src/
+COPY ../models.py ./src/models.py
 
 # Создаем непривилегированного пользователя для безопасности
 RUN useradd --create-home --shell /bin/bash --uid 1000 mcp && \

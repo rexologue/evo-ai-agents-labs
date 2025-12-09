@@ -1,8 +1,0 @@
-.git
-.gitignore
-*.md
-.env
-.env.example
-test/
-docs/
-*.log

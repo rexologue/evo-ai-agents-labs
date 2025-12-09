@@ -3,51 +3,18 @@
 import asyncio
 from typing import List, Optional, Dict
 
-from langchain_core.tools import BaseTool, Tool
 from langchain_openai import ChatOpenAI
+from langchain_core.tools import BaseTool
 from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from langchain_mcp_adapters.client import MultiServerMCPClient  # MCP <-> LangChain
 
 from config import get_settings
-from okpd2_index import OKPD2_INDEX
+from base_prompt import BASE_BEHAVIOR_PROMPT
+from tools.okpd2_tool import build_okpd2_tool
 
 settings = get_settings()
-
-# Поведенческий промпт, описывающий полную задачу агента
-BASE_BEHAVIOR_PROMPT = """
-Ты агент-профайлер компаний (CompanyProfiler).
-
-Твоя задача:
-1) На основе естественного описания от пользователя собрать СТРУКТУРИРОВАННЫЙ профиль компании.
-2) При необходимости задавать уточняющие вопросы, чтобы заполнить все обязательные поля профиля и инструмента БД.
-3) Обязательно классифицировать компанию по ОКПД2 (несколько наиболее подходящих кодов) с помощью инструмента `classify_okpd2`.
-4) Сохранить профиль в БД через MCP-инструмент (обычно `create_company_profile`) и вернуть пользователю:
-   • краткое резюме профиля;
-   • список кодов ОКПД2;
-   • ID созданного профиля из ответа инструмента.
-
-Правила диалога:
-- Спрашивай только то, чего не хватает для вызова инструмента сохранения профиля (см. схему его аргументов).
-- Задавай вопросы блоками (например: сначала про базовое описание и отрасль, потом про регионы и бюджет).
-- Если пользователь не знает точные цифры, можно зафиксировать диапазон или приблизительное значение.
-- Не делай вызов инструмента сохранения, пока не собраны все обязательные поля.
-
-Структура профиля, на которую ты ориентируешься:
-- name — краткое имя/название компании или направления.
-- description — краткое деловое описание (что делает компания, для кого, чем отличается).
-- regions — список регионов, в которых компания реально готова работать.
-- min_contract_price / max_contract_price — типичный диапазон стоимости одного контракта.
-- industries — ключевые отрасли/сферы, с которыми работает компания.
-- resources — ключевые ресурсы (команда, экспертиза, мощности, технологии и т.п.).
-- risk_tolerance — отношение к риску: 'low', 'medium' или 'high'.
-- okpd2_codes — список кодов ОКПД2 (code, title), которые ты подбираешь через `classify_okpd2`.
-
-Перед вызовом инструмента сохранения профиля (например, `create_company_profile`):
-- Убедись, что все поля, отмеченные как required в схеме инструмента, заполнены.
-- В аргументах инструмента строго следуй JSON-схеме: не придумывай дополнительные поля.
-"""
 
 
 def _normalize_mcp_url(raw: str) -> str:
@@ -124,58 +91,8 @@ def get_mcp_tools(mcp_urls: Optional[str]) -> List[BaseTool]:
     return asyncio.run(_get_mcp_tools_async(mcp_urls))
 
 
-def build_okpd2_tool() -> BaseTool:
-    """Строит LangChain Tool для классификации по ОКПД2."""
-    import json
-    from rapidfuzz import process, fuzz
-
-    def _classify_okpd2(text: str) -> str:
-        """
-        На вход принимает подробное описание компании.
-        Возвращает JSON-массив объектов {code, title, score}, отсортированный по убыванию score.
-        Score в диапазоне [0, 1].
-        """
-        query = (text or "").strip()
-        if not query:
-            return "[]"
-
-        # каждый элемент: "код название"
-        choices = [f"{item.code} {item.title}" for item in OKPD2_INDEX]
-
-        matches = process.extract(
-            query,
-            choices,
-            scorer=fuzz.WRatio,
-            limit=5,
-        )
-
-        result = []
-        for _, score, idx in matches:
-            item = OKPD2_INDEX[idx]
-            result.append(
-                {
-                    "code": item.code,
-                    "title": item.title,
-                    "score": round(float(score) / 100.0, 3),
-                }
-            )
-
-        return json.dumps(result, ensure_ascii=False)
-
-    return Tool(
-        name="classify_okpd2",
-        description=(
-            "Подбирает наиболее подходящие коды ОКПД2 по текстовому описанию компании. "
-            "Вход: подробное описание компании, её продуктов/услуг, отрасли и клиентов. "
-            "Выход: JSON-массив объектов {code, title, score}, где score∈[0,1]. "
-            "Используй этот инструмент перед сохранением профиля, чтобы заполнить поле okpd2_codes."
-        ),
-        func=_classify_okpd2,
-    )
-
-
 def create_langchain_agent(mcp_urls: Optional[str] = None) -> AgentExecutor:
-    """Создает LangChain агента с MCP инструментами и классификатором ОКПД2."""
+    """Создает LangChain агента с MCP инструментами"""
     # LLM
     llm = ChatOpenAI(
         model=settings.llm_model,
@@ -194,6 +111,7 @@ def create_langchain_agent(mcp_urls: Optional[str] = None) -> AgentExecutor:
 
     # Системный промпт: env + поведенческий
     system_prompt = (settings.agent_sys_prompt or "").strip()
+    
     if system_prompt:
         system_prompt = system_prompt + "\n\n" + BASE_BEHAVIOR_PROMPT
     else:
