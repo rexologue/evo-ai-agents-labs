@@ -1,0 +1,109 @@
+{
+  "environment_variables": [
+    {
+      "name": "LOG_LEVEL",
+      "type": "string",
+      "default": "INFO",
+      "description": "Уровень логирования (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+      "required": false,
+      "validation": {
+        "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+      },
+      "example": "INFO"
+    },
+    {
+      "name": "DB_HOST",
+      "type": "string",
+      "default": "",
+      "description": "Хост PostgreSQL",
+      "required": true,
+      "validation": {
+        "format": "hostname"
+      },
+      "example": "localhost"
+    },
+    {
+      "name": "DB_PORT",
+      "type": "integer",
+      "default": 5432,
+      "description": "Порт PostgreSQL",
+      "required": true,
+      "validation": {
+        "min": 1,
+        "max": 65535
+      },
+      "example": 5432
+    },
+    {
+      "name": "DB_NAME",
+      "type": "string",
+      "default": "",
+      "description": "Имя базы данных",
+      "required": true,
+      "validation": {
+        "pattern": "^[a-zA-Z0-9_-]+$"
+      },
+      "example": "mcpdb"
+    },
+    {
+      "name": "DB_USER",
+      "type": "string",
+      "default": "",
+      "description": "Пользователь базы данных",
+      "required": true,
+      "validation": {
+        "pattern": "^[a-zA-Z0-9_-]+$"
+      },
+      "example": "postgres"
+    },
+    {
+      "name": "DB_PASSWORD",
+      "type": "string",
+      "default": "",
+      "description": "Пароль пользователя PostgreSQL",
+      "required": true,
+      "validation": {
+        "minLength": 1
+      },
+      "example": "supersecretpassword"
+    },
+    {
+      "name": "DB_MCP_HOST",
+      "type": "string",
+      "default": "",
+      "description": "Хост HTTP транспорта MCP",
+      "required": true,
+      "validation": {
+        "format": "hostname"
+      },
+      "example": "0.0.0.0"
+    },
+    {
+      "name": "DB_MCP_PORT",
+      "type": "integer",
+      "default": 8000,
+      "description": "Порт HTTP транспорта MCP",
+      "required": true,
+      "validation": {
+        "min": 1,
+        "max": 65535
+      },
+      "example": 8000
+    }
+  ],
+  "metadata": {
+    "version": "1.0.0",
+    "description": "Описание переменных окружения для MCP DB + Transport Server",
+    "usage": {
+      "docker": "Указывайте переменные через -e или --env-file",
+      "local": "Создайте .env в корне проекта или экспортируйте переменные в окружение",
+      "example": ".env.example содержит примеры всех переменных"
+    },
+    "notes": [
+      "Все переменные DB_* обязательны, так как без них соединение с PostgreSQL невозможно",
+      "Используйте отдельный пароль для продакшена",
+      "DB_MCP_HOST и DB_MCP_PORT определяют HTTP-транспорт MCP сервера"
+    ]
+  }
+}
+

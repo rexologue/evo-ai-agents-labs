@@ -34,6 +34,7 @@ class Settings(BaseSettings):
 
     # ---- MCP ----
     db_mcp_url: str = Field(..., alias="DB_MCP_URL")
+    codes_mcp_url: str = Field(..., alias="CODES_MCP_URL")
 
     # ---- Agent metadata ----
     agent_name: str = Field("CompanyProfiler", alias="AGENT_NAME")
@@ -55,11 +56,6 @@ class Settings(BaseSettings):
     # Единый post-validator
     # --------------------------------------------------------------------------
     def model_post_init(self, __context):
-        """
-        ЭТА ФУНКЦИЯ ЗАПУСКАЕТСЯ ОДИН РАЗ ПОСЛЕ ЗАГРУЗКИ ВСЕХ ПОЛЕЙ.
-        В продакшене удобно держать всю динамику и derive-логику в одном месте.
-        """
-
         # ----------------------------------------------------------
         # AGENT_URL → вычисляем, если не указан
         # ----------------------------------------------------------
@@ -77,11 +73,14 @@ _settings_cache: Optional[Settings] = None
 def get_settings() -> Settings:
     """Singleton-кеш, чтобы не пересоздавать настройки 100 раз"""
     global _settings_cache
+    
     if _settings_cache is None:
         try:
             _settings_cache = Settings()
+            
         except ValidationError as e:
             logger.error("❌ Invalid configuration:")
             logger.error(e)
             raise
+        
     return _settings_cache

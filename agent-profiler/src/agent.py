@@ -1,7 +1,7 @@
 """Определение LangChain агента с поддержкой MCP инструментов и классификацией по ОКПД2."""
 
 import asyncio
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Sequence
 
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import BaseTool
@@ -12,7 +12,6 @@ from langchain_mcp_adapters.client import MultiServerMCPClient  # MCP <-> LangCh
 
 from config import get_settings
 from base_prompt import BASE_SYSTEM_PROMPT
-from tools.okpd2_tool import build_okpd2_tool
 
 settings = get_settings()
 
@@ -91,41 +90,48 @@ def get_mcp_tools(mcp_urls: Optional[str]) -> List[BaseTool]:
     return asyncio.run(_get_mcp_tools_async(mcp_urls))
 
 
-def create_langchain_agent(mcp_urls: Optional[str] = None) -> AgentExecutor:
+def create_langchain_agent(
+    mcp_urls: str | list[str] | None = None
+) -> AgentExecutor:
     """Создает LangChain агента с MCP инструментами"""
     # LLM
     llm = ChatOpenAI(
         model=settings.llm_model,
         base_url=settings.llm_api_base,
         api_key=settings.llm_api_key,
-        temperature=0.2,
+        temperature=0.1,
     )
 
     # Инструменты MCP (db-mcp и др.)
-    mcp_tools = get_mcp_tools(mcp_urls)
-
-    # Локальный инструмент для ОКПД2
-    okpd2_tool = build_okpd2_tool()
-
-    tools: List[BaseTool] = [*mcp_tools, okpd2_tool]
+    mcp_tools = []
+    
+    if isinstance(mcp_urls, list):
+        for url in mcp_urls:
+            mcp_tools.extend(get_mcp_tools(url))   
+    elif isinstance(mcp_urls, str):
+        mcp_tools.extend(get_mcp_tools(mcp_urls))
+    else:
+        pass
 
     # Системный промпт задается статически через base_prompt
     system_prompt = BASE_SYSTEM_PROMPT
 
     prompt = ChatPromptTemplate.from_messages(
         [
-            ("system", system_prompt),
+            ("system", "{system_prompt}"),
             MessagesPlaceholder(variable_name="chat_history"),
             ("human", "{input}"),
             MessagesPlaceholder(variable_name="agent_scratchpad"),
         ]
+    ).partial(
+        system_prompt=system_prompt
     )
 
-    agent = create_openai_tools_agent(llm, tools, prompt)
+    agent = create_openai_tools_agent(llm, mcp_tools, prompt)
 
     agent_executor = AgentExecutor(
         agent=agent,
-        tools=tools,
+        tools=mcp_tools,
         verbose=True,
         handle_parsing_errors=True,
         max_iterations=20,

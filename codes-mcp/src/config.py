@@ -13,17 +13,12 @@ logging.basicConfig(
     level=getattr(logging, LOG_LEVEL, logging.INFO),
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
 )
-logger = logging.getLogger("db-mcp")
+logger = logging.getLogger("codes-mcp")
 
 
 class Settings(BaseSettings):
-    db_host: str = Field(..., alias="DB_HOST")
-    db_port: int = Field(..., alias="DB_PORT")
-    db_name: str = Field(..., alias="DB_NAME")
-    db_user: str = Field(..., alias="DB_USER")
-    db_password: str = Field(..., alias="DB_PASSWORD")
-    server_port: int = Field(..., alias="DB_MCP_PORT")
-    server_host: str = Field(..., alias="DB_MCP_HOST")
+    server_port: int = Field(..., alias="MCP_PORT")
+    server_host: str = Field(..., alias="MCP_HOST")
 
 
 # ------------------------------------------------------------------------------

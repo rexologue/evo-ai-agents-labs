@@ -18,7 +18,7 @@ def main():
     """Основная функция запуска сервера."""
     try:
         # Создаем LangChain агента
-        agent_executor = create_langchain_agent(settings.db_mcp_url)
+        agent_executor = create_langchain_agent([settings.db_mcp_url, settings.codes_mcp_url])
         
         # Создаем A2A обертку
         agent_wrapper = LangChainA2AWrapper(agent_executor)

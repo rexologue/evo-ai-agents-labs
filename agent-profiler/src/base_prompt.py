@@ -9,12 +9,14 @@ from models import CompanyProfileBase, Okpd2Item
 def _format_fields_for_prompt(model: type[BaseModel]) -> str:
     """Генерирует человекочитаемый список полей для промпта на основе Pydantic-модели."""
     lines: list[str] = []
+    
     for name, field in model.model_fields.items():
         required = field.is_required()
         required_mark = "required" if required else "optional"
         desc = field.description or "(нет описания)"
         type_info = str(field.annotation)
         lines.append(f"- `{name}` ({required_mark}, type: {type_info}) — {desc}")
+        
     return "\n".join(lines)
 
 
