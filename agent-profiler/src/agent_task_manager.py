@@ -29,15 +29,27 @@ class LangChainAgentExecutor(AgentExecutor):
         query = context.get_user_input()
         task = context.current_task
 
+        # Контекст чата должен привязываться к conversation/session id, а не к id новой задачи.
+        # Иначе после подтверждения черновика история диалога теряется, и агент снова просит исходные данные.
+        session_id = getattr(context, "context_id", None) or getattr(
+            task, "context_id", None
+        )
+
         # Создаем новую задачу, если её нет
         if not task:
             task = new_task(context.message)
             await event_queue.enqueue_event(task)
+
+            # если task только что создан, забираем context_id из него как запасной ключ сессии
+            session_id = session_id or getattr(task, "context_id", None)
+
+        # Финальный резерв: гарантируем наличие session_id
+        session_id = session_id or getattr(task, "id", "default")
         
         updater = TaskUpdater(event_queue, task.id, task.context_id)
         
         # Вызываем агента с streaming
-        async for item in self.agent.stream(query, task.context_id):
+        async for item in self.agent.stream(query, session_id):
             is_task_complete = item['is_task_complete']
             require_user_input = item['require_user_input']
             is_error = item['is_error']
