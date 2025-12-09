@@ -15,13 +15,6 @@ MCP сервер с профильным агентом: преобразует 
 Все параметры задаются только через файл `.env` (см. `.env.example`). Ни один сервис не использует значения по умолчанию из
 кода или `docker-compose.yaml`, поэтому заполните файл перед запуском.
 
-### Настройки Postgres
-- `DB_HOST` — хост базы данных
-- `DB_PORT` — порт Postgres
-- `DB_NAME` — имя базы данных
-- `DB_USER` — пользователь базы данных
-- `DB_PASSWORD` — пароль пользователя
-
 ### Настройки `db-mcp`
 - `DB_MCP_HOST` — хост для HTTP транспорта MCP
 - `DB_MCP_PORT` — порт для HTTP транспорта MCP
@@ -50,3 +43,6 @@ python -m src.server
 - `generate_company_profile(description)` — возвращает `company_id`, итоговую сводку и полный профиль компании.
 
 Подробности аргументов доступны в `mcp_tools.json` и `mcp-server-catalog.yaml`.
+
+docker buildx build --platform linux/amd64 -t langchain-agent .
+docker run --rm --network host --env-file .env langchain-agent

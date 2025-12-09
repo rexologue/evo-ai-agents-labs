@@ -19,6 +19,7 @@ RUN uv sync --no-editable
 
 # Копируем исходный код приложения
 COPY src/ ./src/
+COPY SYSTEM.md ./SYSTEM.md
 
 # Создаем непривилегированного пользователя для безопасности
 RUN useradd --create-home --shell /bin/bash --uid 1000 mcp && \
@@ -38,4 +39,4 @@ ENV PYTHONPATH=/app \
     UV_SYSTEM_PYTHON=1
 
 # Команда запуска сервера - точно так же, как локально
-CMD ["uv", "run", "python", "src/server.py"]
+CMD ["uv", "run", "python", "src/start_a2a.py"]

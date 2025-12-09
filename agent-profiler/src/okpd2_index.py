@@ -4,7 +4,7 @@ import csv
 from pathlib import Path
 from typing import List
 
-from .models import Okpd2Item
+from models import Okpd2Item
 
 DATA_PATH = Path(__file__).parent / "data" / "okpd2.csv"
 
