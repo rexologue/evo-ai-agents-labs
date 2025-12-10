@@ -14,10 +14,18 @@ from tools.utils import format_okpd2_index, to_dict_okpd2_index, OKPD2_INDEX, To
     name="get_okpd2_codes",
     description="Выдает таблицу кодов и соответствующих им наименований по ОКПД2.",
 )
-async def get_okpd2_codes(ctx: Context = None) -> ToolResult:
+async def get_okpd2_codes(
+    ctx: Context = None,
+    query: str = Field(
+        default="",
+        description="Описание деятельности компании на русском языке (для контекстного поиска)",
+    ),
+) -> ToolResult:
 
     if ctx:
-        await ctx.info("Формируем таблицу кодов ОКПД2")
+        await ctx.info(
+            "Формируем таблицу кодов ОКПД2" if not query else f"Формируем таблицу кодов ОКПД2 (запрос: {query})"
+        )
         await ctx.report_progress(progress=0, total=50)
 
     okpd2_table = format_okpd2_index()
@@ -33,5 +41,6 @@ async def get_okpd2_codes(ctx: Context = None) -> ToolResult:
         meta={
             "operation": "get_okpd2_codes",
             "count": len(OKPD2_INDEX),
+            "query": query,
         },
     )
