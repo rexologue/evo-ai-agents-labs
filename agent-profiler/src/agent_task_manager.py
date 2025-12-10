@@ -1,11 +1,22 @@
+# agent_task_manager.py
+
+import logging
 from a2a.server.agent_execution import AgentExecutor, RequestContext
 from a2a.server.events import EventQueue
 from a2a.server.tasks import TaskUpdater
-from a2a.types import Task, TaskState, UnsupportedOperationError
-from a2a.utils import new_agent_text_message, new_task
+from a2a.types import (
+    Task,
+    TaskState,
+    UnsupportedOperationError,
+)
+from a2a.utils import (
+    new_agent_text_message,
+    new_task,
+)
 from a2a.utils.errors import ServerError
-
 from a2a_wrapper import LangChainA2AWrapper
+
+logger = logging.getLogger(__name__)
 
 
 class LangChainAgentExecutor(AgentExecutor):
@@ -22,65 +33,87 @@ class LangChainAgentExecutor(AgentExecutor):
         query = context.get_user_input()
         task = context.current_task
 
-        # 1) Гарантируем, что Task существует
-        if not task:
-            if not context.message:
-                raise ServerError("No message in RequestContext")
-            task = new_task(context.message)  # type: ignore[arg-type]
-            await event_queue.enqueue_event(task)
+        # 1️⃣ Пытаемся взять session_id из metadata, которое прислал клиент
+        session_id: str | None = None
+        try:
+            metadata = getattr(context, "metadata", None) or {}
+            if isinstance(metadata, dict):
+                session_id = metadata.get("session_id")
+        except Exception:
+            session_id = None
 
-        # 2) ЖЁСТКО: один LangChain-session_id = task.context_id
-        session_id = task.context_id or getattr(context, "context_id", None) or task.id
+        # 2️⃣ Если клиент не прислал session_id — fallback (но лучше всё-таки присылать)
+        if not session_id:
+            session_id = (
+                getattr(context, "context_id", None)
+                or (getattr(task, "context_id", None) if task else None)
+                or (getattr(task, "id", None) if task else None)
+                or "default"
+            )
+
+        logger.info(
+            "LC-A2A execute: session_id=%s, context_id=%s, task_id=%s",
+            session_id,
+            getattr(context, "context_id", None),
+            getattr(task, "id", None) if task else None,
+        )
+
+        # 3️⃣ Создаём задачу, если её ещё нет (для A2A протокола)
+        if not task:
+            task = new_task(context.message)
+            await event_queue.enqueue_event(task)
 
         updater = TaskUpdater(event_queue, task.id, task.context_id)
 
-        # 3) Стримим ответ агента
+        # 4️⃣ Критично: передаём ВОТ ЭТОТ session_id в A2A wrapper
         async for item in self.agent.stream(query, session_id):
             is_task_complete = item["is_task_complete"]
             require_user_input = item["require_user_input"]
             is_error = item["is_error"]
             is_event = item["is_event"]
-            content = item["content"]
 
             if is_error:
                 await updater.update_status(
                     TaskState.failed,
-                    new_agent_text_message(content, task.context_id, task.id),
-                    final=True,
+                    new_agent_text_message(
+                        item["content"], task.context_id, task.id
+                    ),
                 )
                 break
 
             if is_event:
-                # промежуточные события (типы "Использую инструмент: ...")
                 await updater.update_status(
                     TaskState.working,
-                    new_agent_text_message(content, task.context_id, task.id),
+                    new_agent_text_message(
+                        item["content"], task.context_id, task.id
+                    ),
                 )
                 continue
 
-            # Стримим промежуточный текст (LLM ответ по кускам)
             if not is_task_complete and not require_user_input:
                 await updater.update_status(
                     TaskState.working,
-                    new_agent_text_message(content, task.context_id, task.id),
+                    new_agent_text_message(
+                        item["content"], task.context_id, task.id
+                    ),
                 )
                 continue
 
-            # Модели нужен ответ пользователя
             if not is_task_complete and require_user_input:
                 await updater.update_status(
                     TaskState.input_required,
-                    new_agent_text_message(content, task.context_id, task.id),
-                    final=True,
+                    new_agent_text_message(
+                        item["content"], task.context_id, task.id
+                    ),
                 )
                 break
 
-            # Задача полностью завершена, ввод пользователя не нужен
             if is_task_complete and not require_user_input:
                 await updater.update_status(
                     TaskState.completed,
-                    new_agent_text_message(content, task.context_id, task.id),
-                    final=True,
+                    new_agent_text_message(
+                        item["content"], task.context_id, task.id
+                    ),
                 )
                 break
 
