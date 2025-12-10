@@ -112,7 +112,7 @@ class LangChainA2AWrapper:
             }
 
             # ✅ если задача завершена и не требуется ввод пользователя — чистим сессию
-            if self.auto_reset_on_complete and not need_input:
+            if not need_input:
                 self._reset_session(session_id)
 
             return response
@@ -215,7 +215,7 @@ class LangChainA2AWrapper:
                 }
 
             # ✅ Автоочистка сессии, если задача завершена и не нужен ввод пользователя
-            if self.auto_reset_on_complete and not need_input:
+            if not need_input:
                 self._reset_session(session_id)
 
             # Отдаём финальное сообщение

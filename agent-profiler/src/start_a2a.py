@@ -21,7 +21,7 @@ def main():
         agent_executor = create_langchain_agent([settings.db_mcp_url, settings.codes_mcp_url])
         
         # Создаем A2A обертку
-        agent_wrapper = LangChainA2AWrapper(agent_executor, auto_reset_on_complete=True)
+        agent_wrapper = LangChainA2AWrapper(agent_executor, auto_reset_on_complete=False)
         
         # Создаем A2A executor
         agent_executor_a2a = LangChainAgentExecutor(agent_wrapper)
