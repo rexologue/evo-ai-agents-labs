@@ -1,0 +1,130 @@
+{
+  "environment_variables": [
+    {
+      "name": "LOG_LEVEL",
+      "type": "string",
+      "default": "INFO",
+      "description": "Уровень логирования (DEBUG, INFO, WARNING, ERROR, CRITICAL)",
+      "required": false,
+      "validation": {
+        "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+      },
+      "example": "INFO"
+    },
+    {
+      "name": "LLM_MODEL",
+      "type": "string",
+      "default": "",
+      "description": "Название модели LLM для обработки диалогов",
+      "required": true,
+      "example": "gpt-4o-mini"
+    },
+    {
+      "name": "LLM_API_KEY",
+      "type": "string",
+      "default": "",
+      "description": "API-ключ для доступа к выбранной LLM",
+      "required": true,
+      "validation": {
+        "minLength": 1
+      },
+      "example": "sk-***"
+    },
+    {
+      "name": "LLM_API_BASE",
+      "type": "string",
+      "default": "",
+      "description": "Базовый URL провайдера LLM",
+      "required": true,
+      "validation": {
+        "format": "uri"
+      },
+      "example": "https://api.openai.com/v1"
+    },
+    {
+      "name": "DB_MCP_URL",
+      "type": "string",
+      "default": "",
+      "description": "HTTP URL MCP-сервера для работы с профилями компаний",
+      "required": true,
+      "validation": {
+        "format": "uri"
+      },
+      "example": "http://localhost:28001/mcp"
+    },
+    {
+      "name": "CODES_MCP_URL",
+      "type": "string",
+      "default": "",
+      "description": "HTTP URL MCP-сервера со справочниками регионов и ОКПД2",
+      "required": true,
+      "validation": {
+        "format": "uri"
+      },
+      "example": "http://localhost:28002/mcp"
+    },
+    {
+      "name": "AGENT_NAME",
+      "type": "string",
+      "default": "CompanyProfiler",
+      "description": "Отображаемое имя A2A-агента",
+      "required": false,
+      "example": "CompanyProfiler"
+    },
+    {
+      "name": "AGENT_DESCRIPTION",
+      "type": "string",
+      "default": "LangChain Agent для формирования профиля компаний",
+      "description": "Описание агента в A2A-карточке",
+      "required": false,
+      "example": "Агент собирает и сохраняет профили компаний"
+    },
+    {
+      "name": "AGENT_HOST",
+      "type": "string",
+      "default": "0.0.0.0",
+      "description": "Хост для запуска A2A HTTP-сервера",
+      "required": false,
+      "validation": {
+        "format": "hostname"
+      },
+      "example": "0.0.0.0"
+    },
+    {
+      "name": "AGENT_PORT",
+      "type": "integer",
+      "default": 8001,
+      "description": "Порт A2A HTTP-сервера",
+      "required": false,
+      "validation": {
+        "min": 1,
+        "max": 65535
+      },
+      "example": 8001
+    },
+    {
+      "name": "AGENT_URL",
+      "type": "string",
+      "default": "",
+      "description": "Полный URL агента (если не указан, собирается из AGENT_HOST и AGENT_PORT)",
+      "required": false,
+      "validation": {
+        "format": "uri"
+      },
+      "example": "http://0.0.0.0:8001"
+    }
+  ],
+  "metadata": {
+    "version": "1.0.0",
+    "description": "Переменные окружения для запуска агента CompanyProfiler через A2A",
+    "usage": {
+      "docker": "Передавайте переменные через --env-file или -e",
+      "local": "Создайте .env в корне agent-profiler или экспортируйте переменные в окружение"
+    },
+    "notes": [
+      "LLM_* обязательны для работы агента через LangChain",
+      "DB_MCP_URL и CODES_MCP_URL должны указывать на доступные MCP-сервера",
+      "AGENT_URL вычисляется автоматически, если не задан"
+    ]
+  }
+}
