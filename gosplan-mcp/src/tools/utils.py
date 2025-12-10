@@ -1,4 +1,4 @@
-"""#B8;8BK 4;O MCP 8=AB@C<5=B>2."""
+"""Утилиты для форматирования ответов и проверки окружения."""
 
 import json
 import os
@@ -11,83 +11,41 @@ from mcp.types import TextContent
 
 @dataclass
 class ToolResult:
-    """#=8D8F8@>20==0O AB@C:BC@0 @57C;LB0B0 4;O MCP 8=AB@C<5=B>2."""
+    """Стандартная обертка для результатов MCP инструмента."""
 
-    content: list[TextContent]  # '5;>25:>-G8B05<K9 B5:AB 4;O LLM
-    structured_content: (
-        dict[str, Any] | list[dict[str, Any]]
-    )  # !K@K5 40==K5 API
-    meta: dict[str, Any]  # 5B040==K5 2K?>;=5=8O (?0@0<5B@K, AG5BG8:8)
-
-
-def _require_env_vars(vars: list[str]) -> dict[str, str]:
-    """
-    @>25@:0 8 ?>;CG5=85 ?5@5<5==KE >:@C65=8O.
-
-    Args:
-        vars: !?8A>: 8<5= ?5@5<5==KE >:@C65=8O
-
-    Returns:
-        !;>20@L ?5@5<5==KE >:@C65=8O
-
-    Raises:
-        McpError: A;8 :0:0O-;81> ?5@5<5==0O >BACBAB2C5B
-    """
-    missing = [v for v in vars if not os.getenv(v)]
-    if missing:
-        raise McpError(
-            ErrorData(
-                code=-32603,
-                message=f"Missing environment variables: {', '.join(missing)}",
-            )
-        )
-    return {v: os.getenv(v) for v in vars}  # type: ignore
+    content: list[TextContent]
+    structured_content: dict[str, Any] | list[dict[str, Any]]
+    meta: dict[str, Any]
+    """Проверяет, что обязательные переменные окружения заполнены."""
 
 
-def format_api_error(text: str, code: int) -> str:
-    """
-    $>@<0B8@>20=85 >H81:8 API 4;O >B>1@065=8O ?>;L7>20B5;N.
+    """Возвращает удобочитаемое описание ошибки API."""
+        return "Запись не найдена"
+    if code == 422:
+                return "Ошибки валидации:\n  - " + "\n  - ".join(messages)
 
-    Args:
-        text: "5:AB >B25B0 API
-        code: HTTP :>4 >B25B0
-
-    Returns:
-        BD>@<0B8@>20==>5 A>>1I5=85 >1 >H81:5
-    """
-    if code == 404:
-        return ">:C<5=B =5 =0945="
-    elif code == 422:
-        # 0@A8=3 >H81>: 20;840F88 Pydantic
-        try:
-            error_data = json.loads(text)
-            detail = error_data.get("detail", [])
-            if isinstance(detail, list):
-                messages = []
-                for err in detail:
-                    loc = ".".join(str(x) for x in err.get("loc", []))
-                    msg = err.get("msg", "Unknown error")
-                    messages.append(f"{loc}: {msg}")
-                return "H81:8 20;840F88:\n  - " + "\n  - ".join(messages)
-        except Exception:
-            pass
-    return f"HTTP {code}: {text[:200]}"
-
-
-def format_purchase_summary(purchase: dict[str, Any]) -> str:
-    """
-    $>@<0B8@>20=85 :@0B:>9 8=D>@<0F88 > 70:C?:5.
-
-    Args:
-        purchase: !;>20@L A 40==K<8 70:C?:8
-
-    Returns:
-        BD>@<0B8@>20==K9 B5:AB
-    """
-    stage_map = {
-        1: ">40G0 70O2>:",
-        2: " 01>B0 :><8AA88",
-        3: "0:C?:0 7025@H5=0",
+    """Краткое текстовое представление закупки."""
+        1: "подача заявок",
+        2: "рассмотрение",
+        3: "определение победителя",
+        4: "заключение договора",
+    close_at_str = close_at if close_at else "нет данных"
+    max_price_str = f"{max_price:,.2f}" if max_price else "нет данных"
+Номер закупки: {purchase['purchase_number']}
+Заказчик: {purchase['customer']}
+Описание: {purchase['object_info']}
+Начальная цена: {max_price_str} {purchase['currency_code']}
+Окончание приема заявок: {close_at_str}
+Стадия: {stage_map.get(purchase['stage'], 'неизвестно')}
+Регион: {purchase['region']}
+ОКПД2: {okpd2_codes or 'нет данных'}
+    """Формирует список закупок для текстового ответа."""
+    header = f"Всего закупок: {total}\nПоказано: {len(purchases)}\n\n"
+    """Подробное описание закупки для вывода в LLM."""
+        text += "\n\nМеста поставки:\n"
+    text += f"\n\nДокументы закупки ({len(docs)}):\n"
+        text += f"  - {doc['doc_type']} (опубликован: {doc['published_at']})\n"
+            f"\n\nСвязанные планы закупок: {', '.join(purchase['plan_numbers'])}\n"
         4: "0:C?:0 >B<5=5=0",
     }
 

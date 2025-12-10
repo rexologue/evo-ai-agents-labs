@@ -1,6 +1,5 @@
-"""Единый экземпляр FastMCP для всего приложения."""
+"""Единый экземпляр FastMCP для gosplan-mcp."""
 
 from fastmcp import FastMCP
 
-# Создаем единый экземпляр FastMCP
-mcp = FastMCP("My FastMCP")
+mcp = FastMCP("gosplan-mcp")

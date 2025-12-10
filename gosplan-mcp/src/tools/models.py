@@ -1,4 +1,4 @@
-"""Pydantic <>45;8 4;O 20;840F88 70?@>A>2 8 ?0@A8=30 >B25B>2 API >A;0=."""
+"""Pydantic модели для работы с данными ГосПлан."""
 
 import re
 from datetime import datetime
@@ -8,21 +8,24 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class SearchPurchasesRequest(BaseModel):
-    """>45;L 20;840F88 ?0@0<5B@>2 4;O ?>8A:0 70:C?>:."""
+    """Параметры поиска закупок."""
+    classifier: str | None = Field(None, description="Код ОКПД2")
 
-    classifier: str | None = Field(None, description="OKPD2 :>4")
-    submission_close_after: datetime | None = None
-    submission_close_before: datetime | None = None
-    region: int | None = Field(None, ge=1, le=99)
-    stage: int = Field(1)
-    currency_code: str = Field("RUB")
-    limit: int = Field(20, ge=1, le=100)
-    skip: int = Field(0, ge=0)
+    def validate_okpd2(cls, value: str | None) -> str | None:
+        """Проверяет, что код ОКПД2 соответствует формату xx.yy.zz.qq."""
 
-    @field_validator("classifier")
-    @classmethod
-    def validate_okpd2(cls, v: str | None) -> str | None:
-        """0;840F8O D>@<0B0 2: xx.yy.zz.qq 8;8 3@C??K (xx, xx.yy)."""
+        if value is None:
+            return value
+        if not re.match(r"^\d{2}(\.\d{2}){0,3}$", value):
+            raise ValueError(f"Invalid OKPD2 format: {value}")
+        return value
+    """Запрос на получение деталей закупки."""
+
+    """Документ из карточки закупки."""
+    """Краткая модель закупки из списка."""
+    """Детальная модель закупки с полным набором полей."""
+    # Наследует все поля PurchaseIndex, включая документы с исходными данными
+    # в поле source
         if v is None:
             return v
         if not re.match(r"^\d{2}(\.\d{2}){0,3}$", v):

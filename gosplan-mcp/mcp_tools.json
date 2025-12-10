@@ -1,0 +1,21 @@
+[
+  {
+    "name": "search_purchases",
+    "description": "Поиск государственных закупок по 223-ФЗ с фильтрами по ОКПД2, региону и срокам.",
+    "args": [
+      {"name": "classifier", "description": "Код ОКПД2", "required": false},
+      {"name": "submission_close_after", "description": "Искать закупки с окончанием подачи после даты (ISO)", "required": false},
+      {"name": "submission_close_before", "description": "Искать закупки с окончанием подачи до даты (ISO)", "required": false},
+      {"name": "region", "description": "Код региона (1-99)", "required": false},
+      {"name": "limit", "description": "Количество результатов (1-100)", "required": false},
+      {"name": "skip", "description": "Количество записей для пропуска", "required": false}
+    ]
+  },
+  {
+    "name": "get_purchase_details",
+    "description": "Получение полной информации о закупке по ее номеру.",
+    "args": [
+      {"name": "purchase_number", "description": "Номер закупки", "required": true}
+    ]
+  }
+]

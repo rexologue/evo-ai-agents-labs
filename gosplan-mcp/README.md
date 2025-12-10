@@ -1,31 +1,29 @@
+# gosplan-mcp
 
+MCP сервер для поиска и получения деталей государственных закупок из ГосПлан.
 
-MCP endpoint: http://0.0.0.0:8000/mcp
+## 🚀 Возможности
+- `search_purchases` — поиск закупок по ОКПД2, региону и срокам подачи заявок.
+- `get_purchase_details` — получение полной информации о закупке по номеру.
 
-    MCP/
-    ├── src/
-    │   ├── mcp_instance.py            # Единый экземпляр FastMCP
-    │   ├── server.py                  # Главный файл запуска
-    │   ├── tools/
-    │   │   ├── __init__.py
-    │   │   ├── tool_name.py            # Инструменты (один файл = один инструмент)
-    │   │   ├── utils.py                # Общие утилиты
-    │   │   └── models.py               # Pydantic модели (опционально)
-    │   ├── middleware/
-    │   │   ├── __init__.py
-    │   │   └── custom_middleware.py    # Кастомные middleware (опционально)
-    │   ├── utils/
-    │   │   └── settings.py
-    │   └── metrics.py                   # Prometheus метрики (опционально)
-    ├── test/
-    │   ├── __init__.py
-    │   ├── test_tools.py           # Unit тесты инструментов
-    │   └── test_integration.py     # Интеграционные тесты
-    ├── pyproject.toml               # Зависимости проекта
-    ├── .env.example                 # Пример переменных окружения
-    ├── env_options.json             # Описание переменных окружения
-    ├── mcp-server-catalog.yaml      # Каталог MCP сервера
-    ├── mcp_tools.json               # JSON описание инструментов MCP
-    ├── README.md                    # Документация проекта
-    ├── Dockerfile                   # Docker образ
-    └── docker-compose.yml           # Docker Compose конфигурация
+## 🔧 Переменные окружения
+
+Все переменные задаются через `.env` (см. `.env.example`) или флаги контейнера.
+
+- `MCP_HOST` — хост HTTP транспорта MCP (обязательно)
+- `MCP_PORT` — порт HTTP транспорта MCP (обязательно)
+- `LOG_LEVEL` — уровень логирования (`DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`)
+
+## 🚀 Запуск
+```bash
+docker buildx build --platform linux/amd64 -t gosplan-mcp -f Dockerfile ..
+docker run --rm --network host --env-file .env gosplan-mcp
+```
+
+После старта сервер доступен по адресу `http://<MCP_HOST>:<MCP_PORT>/mcp` с транспортом `streamable-http`.
+
+## 📖 Использование инструментов
+- `search_purchases(classifier?, submission_close_after?, submission_close_before?, region?, limit?, skip?)` — поиск списка закупок.
+- `get_purchase_details(purchase_number)` — детальная карточка закупки.
+
+Полное описание аргументов доступно в `mcp_tools.json`.
