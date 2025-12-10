@@ -2,7 +2,14 @@
   {
     "name": "get_okpd2_codes",
     "description": "Выдает таблицу кодов и соответствующих им наименований по ОКПД2.",
-    "args": []
+    "args": [
+      {
+        "name": "query",
+        "type": "string",
+        "description": "Описание деятельности компании на русском языке (для контекстного поиска)",
+        "required": false
+      }
+    ]
   },
   {
     "name": "get_regions_codes",
