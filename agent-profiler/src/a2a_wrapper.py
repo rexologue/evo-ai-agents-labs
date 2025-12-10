@@ -45,6 +45,7 @@ class LangChainA2AWrapper:
         self.agent_executor = agent_executor
         # ✅ история как список BaseMessage (HumanMessage / AIMessage)
         self.sessions: Dict[str, List[BaseMessage]] = {}
+        
         # ✅ включаем/выключаем автоочистку сессии после завершения задачи
         # По умолчанию автоочистка отключена, чтобы не терять контекст между
         # запросами в интерактивных сценариях, где клиент может не передавать
@@ -55,6 +56,7 @@ class LangChainA2AWrapper:
         """Получает историю сессии для подстановки в MessagesPlaceholder(chat_history)."""
         if session_id not in self.sessions:
             self.sessions[session_id] = []
+            
         return self.sessions[session_id]
 
     def _reset_session(self, session_id: str) -> None:
@@ -202,6 +204,7 @@ class LangChainA2AWrapper:
                     "is_error": False,
                     "is_event": False,
                 }
+                
             else:
                 final_payload = {
                     "is_task_complete": not need_input,
