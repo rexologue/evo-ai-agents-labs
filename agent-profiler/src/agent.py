@@ -96,6 +96,8 @@ def create_langchain_agent(
     """Создает LangChain агента с MCP инструментами"""
     logger.info("LLM: model=%s base_url=%s", settings.llm_model, settings.llm_api_base)
     
+    settings.llm_model = settings.llm_model.replace("hosted_vllm/", "")
+    
     # LLM
     llm = ChatOpenAI(
         model=settings.llm_model,
