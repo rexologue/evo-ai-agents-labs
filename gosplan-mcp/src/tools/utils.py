@@ -1,5 +1,7 @@
 """Утилиты для форматирования ответов и проверки окружения."""
 
+from __future__ import annotations
+
 import json
 import os
 from dataclasses import dataclass
@@ -106,35 +108,34 @@ def format_purchase_summary(purchase: dict[str, Any]) -> str:
         f"Регион: {purchase.get('region', 'нет данных')}\n"
         f"ОКПД2: {okpd2_codes or 'нет данных'}"
     )
-    """Формирует список закупок для текстового ответа."""
+
+
+def format_purchase_list(purchases: list[dict[str, Any]], total: int) -> str:
+    """Формирует текстовый список закупок для ответа LLM."""
 
     header = f"Всего закупок: {total}\nПоказано: {len(purchases)}\n\n"
+    formatted_items = []
 
-    """Подробное описание закупки для вывода в LLM."""
+    for idx, purchase in enumerate(purchases, start=1):
+        formatted_items.append(f"{idx}.\n{format_purchase_summary(purchase)}")
+
+    return header + "\n\n".join(formatted_items)
+
+
+def format_purchase_details(purchase: dict[str, Any]) -> str:
+    """Подробное описание закупки с приложениями и местами поставки."""
+
+    delivery_places = purchase.get("delivery_places") or []
+    if delivery_places:
         text += "\n\nМеста поставки:\n"
+        for place in delivery_places:
     text += f"\n\nДокументы закупки ({len(docs)}):\n"
-        text += f"  - {doc['doc_type']} (опубликован: {doc['published_at']})\n"
-
-            f"\n\nСвязанные планы закупок: {', '.join(purchase['plan_numbers'])}\n"
-    """
-    $>@<0B8@>20=85 45B0;L=>9 8=D>@<0F88 > 70:C?:5 A 4>:C<5=B0<8.
-
-    Args:
-        purchase: !;>20@L A 40==K<8 70:C?:8
-
-    Returns:
-        BD>@<0B8@>20==K9 B5:AB
-    """
-    text = format_purchase_summary(purchase)
-
-    # >102;O5< <5AB0 ?>AB02:8
-    if purchase.get("delivery_places"):
-        text += "\n\n5AB0 ?>AB02:8:\n"
-        for place in purchase["delivery_places"]:
-            text += f"  - {place}\n"
-
-    # >102;O5< 4>:C<5=BK
-    docs = purchase.get("docs", [])
+        doc_type = doc.get("doc_type", "Неизвестный документ")
+        published_at = doc.get("published_at", "нет данных")
+        text += f"  - {doc_type} (опубликован: {published_at})\n"
+    plan_numbers = purchase.get("plan_numbers") or []
+    if plan_numbers:
+        text += f"\n\nСвязанные планы закупок: {', '.join(plan_numbers)}\n"
     text += f"\n\n>:C<5=BK 70:C?:8 ({len(docs)}):\n"
     for doc in docs:
         text += f"  - {doc['doc_type']} (>?C1;8:>20=>: {doc['published_at']})\n"
