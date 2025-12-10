@@ -1,0 +1,137 @@
+[project]
+name = "MCP_server"
+version = "0.1.0"
+description = ""
+authors = [
+    { name = "StolovAR", email = "andrey.stolov.04@gmail.com" }
+]
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+
+[tool.poetry]
+package-mode = false
+
+[tool.poetry.dependencies]
+python = ">=3.13,<3.14"
+orjson = "^3.10.18"
+loguru = "^0.7.3"
+pydantic = "^2.11.7"
+pydantic-settings = "^2.10.1"
+dynaconf = { extras = ["release", "yaml"], version = "^3.2.11" }
+fastmcp = "^2.13.3"
+prometheus-client = "^0.23.1"
+opentelemetry-api = "^1.39.0"
+opentelemetry-sdk = "^1.39.0"
+opentelemetry-exporter-otlp-proto-http = "^1.39.0"
+
+[tool.poetry.group.dev.dependencies]
+ruff = ">=0.14.4"
+mypy = ">=1.18.2"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.mypy]
+python_version = "3.13"
+platform = "unix"
+explicit_package_bases = true
+warn_return_any = true
+warn_unused_configs = true
+warn_no_return = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_unreachable = true
+strict = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+strict_optional = true
+strict_equality = true
+implicit_reexport = false
+exclude = '''(?x)(
+    \.eggs
+    | \.git
+    | \.hg
+    | \.mypy_cache
+    | \.tox
+    | \.venv
+    | _build
+    | buck-out
+    | build
+    | dist
+    | __pypackages__
+    | \.pytest_cache
+    | \.ruff_cache
+    | \.direnv
+)'''
+
+[tool.ruff]
+target-version = "py313"
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "site-packages",
+    "venv",
+]
+
+line-length = 80
+indent-width = 4
+
+
+[tool.ruff.lint]
+select = [
+    "E", # pycodestyle (error)
+    "F", # pyflakes
+    "B", # bugbear
+    "B9",
+    "C4", # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "I", # isort
+    "UP", # pyupgrade
+    "PIE", # flake8-pie
+    "PGH", # pygrep-hooks
+    "PYI", # flake8-pyi
+    "RUF",
+]
+ignore = [
+    # Ignoring russian comments
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    "PGH003",
+    # Unused imports
+    "F401",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+docstring-code-format = false
+docstring-code-line-length = 80
+line-ending = "lf"

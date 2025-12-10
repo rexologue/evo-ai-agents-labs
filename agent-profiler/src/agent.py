@@ -1,6 +1,7 @@
 """Определение LangChain агента с поддержкой MCP инструментов и классификацией по ОКПД2."""
 
 import asyncio
+import logging
 from typing import List, Optional, Dict, Sequence
 
 from langchain_openai import ChatOpenAI
@@ -94,6 +95,8 @@ def create_langchain_agent(
     mcp_urls: str | list[str] | None = None
 ) -> AgentExecutor:
     """Создает LangChain агента с MCP инструментами"""
+    logger.info("LLM: model=%s base_url=%s", settings.llm_model, settings.llm_api_base)
+    
     # LLM
     llm = ChatOpenAI(
         model=settings.llm_model,
