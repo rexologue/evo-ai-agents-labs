@@ -189,19 +189,6 @@ class LangChainA2AWrapper:
                     if _was_create_company_profile_called(steps_batch):
                         tool_called = True
 
-                    for step in steps_batch:
-                        try:
-                            tool_name = getattr(step[0], "tool", "tool")
-                        except Exception:
-                            tool_name = "tool"
-                        yield {
-                            "is_task_complete": False,
-                            "require_user_input": False,
-                            "content": f"Использую инструмент: {tool_name}\n",
-                            "is_error": False,
-                            "is_event": True,
-                        }
-
             # После окончания стрима обрабатываем накопленный ответ
             clean_full = _strip_think_blocks(full_response)
 
