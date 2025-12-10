@@ -21,18 +21,23 @@ def _strip_think_blocks(text: str) -> str:
     return _THINK_BLOCK_RE.sub("", text).strip()
 
 
-def _strip_need_input(text: str) -> tuple[str, bool]:
-    """
-    Убирает тег `<NEED_USER_INPUT>` и возвращает (очищенный_текст, нужен_ли_ответ_пользователя).
+def _detect_need_input(text: str) -> tuple[str, str, bool]:
+    """Определяет наличие `<NEED_USER_INPUT>` без потери токена для пользователя.
+
+    Возвращает кортеж из трёх значений:
+    - `content_for_user`: текст, который нужно отправить пользователю (токен сохраняется);
+    - `content_for_history`: текст без токена, чтобы не засорять историю;
+    - `need_input`: булево, требовать ли ответ пользователя.
     """
     if not text:
-        return text, False
+        return text, text, False
 
-    if "<NEED_USER_INPUT>" in text:
-        clean = text.replace("<NEED_USER_INPUT>", "").strip()
-        return clean, True
+    has_token = "<NEED_USER_INPUT>" in text
+    if not has_token:
+        return text, text, False
 
-    return text, False
+    clean = text.replace("<NEED_USER_INPUT>", "").strip()
+    return text, clean, True
 
 
 class LangChainA2AWrapper:
@@ -93,20 +98,22 @@ class LangChainA2AWrapper:
             else:
                 raw_output = str(result)
 
-            # Убираем служебные теги
+            # Убираем служебные теги и определяем наличие токена пользовательского ввода
             clean_output = _strip_think_blocks(raw_output)
-            clean_output, need_input = _strip_need_input(clean_output)
+            content_for_user, content_for_history, need_input = _detect_need_input(
+                clean_output
+            )
 
             # Обновляем историю диалога
             if query:
                 chat_history.append(HumanMessage(content=query))
-            if clean_output:
-                chat_history.append(AIMessage(content=clean_output))
+            if content_for_history:
+                chat_history.append(AIMessage(content=content_for_history))
 
             response = {
                 "is_task_complete": not need_input,
                 "require_user_input": need_input,
-                "content": clean_output,
+                "content": content_for_user,
                 "is_error": False,
                 "is_event": False,
             }
@@ -185,22 +192,24 @@ class LangChainA2AWrapper:
 
             # После окончания стрима чистим служебные теги
             clean_full = _strip_think_blocks(full_response)
-            clean_full, need_input = _strip_need_input(clean_full)
+            content_for_user, content_for_history, need_input = _detect_need_input(
+                clean_full
+            )
 
             # Обновляем историю диалога
             if query:
                 chat_history.append(HumanMessage(content=query))
-            if clean_full:
-                chat_history.append(AIMessage(content=clean_full))
+            if content_for_history:
+                chat_history.append(AIMessage(content=content_for_history))
                 
             logger.debug("LC-A2A stream: session_id=%s, history_len(after)=%d", session_id, len(chat_history))
 
             # Готовим финальный payload
-            if not full_response or clean_full != full_response:
+            if not full_response or content_for_user != full_response:
                 final_payload = {
                     "is_task_complete": not need_input,
                     "require_user_input": need_input,
-                    "content": clean_full,
+                    "content": content_for_user,
                     "is_error": False,
                     "is_event": False,
                 }
