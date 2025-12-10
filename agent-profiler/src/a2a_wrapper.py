@@ -61,7 +61,9 @@ class LangChainA2AWrapper:
     # Для совместимости с A2A
     SUPPORTED_CONTENT_TYPES = ["text", "text/plain"]
 
-    def __init__(self, agent_executor: AgentExecutor, auto_reset_on_complete: bool = False) -> None:
+    def __init__(
+        self, agent_executor: AgentExecutor, auto_reset_on_complete: bool = True
+    ) -> None:
         self.agent_executor = agent_executor
         # история как список BaseMessage (HumanMessage / AIMessage)
         self.sessions: Dict[str, List[BaseMessage]] = {}
