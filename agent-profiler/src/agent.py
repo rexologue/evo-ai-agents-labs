@@ -1,7 +1,6 @@
 """Определение LangChain агента с поддержкой MCP инструментов и классификацией по ОКПД2."""
 
 import asyncio
-import logging
 from typing import List, Optional, Dict, Sequence
 
 from langchain_openai import ChatOpenAI
@@ -11,7 +10,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from langchain_mcp_adapters.client import MultiServerMCPClient  # MCP <-> LangChain
 
-from config import get_settings
+from config import get_settings, logger
 from base_prompt import BASE_SYSTEM_PROMPT
 
 settings = get_settings()
@@ -138,6 +137,7 @@ def create_langchain_agent(
         verbose=True,
         handle_parsing_errors=True,
         max_iterations=20,
+        return_intermediate_steps=True,
     )
 
     return agent_executor
