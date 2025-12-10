@@ -9,8 +9,22 @@ from pydantic import BaseModel, Field, field_validator
 
 class SearchPurchasesRequest(BaseModel):
     """Параметры поиска закупок."""
-    classifier: str | None = Field(None, description="Код ОКПД2")
 
+    classifier: str | None = Field(None, description="Код ОКПД2")
+    submission_close_after: datetime | None = Field(
+        None, description="Окончание подачи заявок ПОСЛЕ указанной даты"
+    )
+    submission_close_before: datetime | None = Field(
+        None, description="Окончание подачи заявок ДО указанной даты"
+    )
+    region: int | None = Field(None, ge=1, le=99, description="Код региона")
+    stage: int = Field(1, description="Этап проведения закупки")
+    currency_code: str = Field("RUB", min_length=3, max_length=3)
+    limit: int = Field(20, ge=1, le=100)
+    skip: int = Field(0, ge=0)
+
+    @field_validator("classifier")
+    @classmethod
     def validate_okpd2(cls, value: str | None) -> str | None:
         """Проверяет, что код ОКПД2 соответствует формату xx.yy.zz.qq."""
 
@@ -19,31 +33,21 @@ class SearchPurchasesRequest(BaseModel):
         if not re.match(r"^\d{2}(\.\d{2}){0,3}$", value):
             raise ValueError(f"Invalid OKPD2 format: {value}")
         return value
-    """Запрос на получение деталей закупки."""
-
-    """Документ из карточки закупки."""
-    """Краткая модель закупки из списка."""
-    """Детальная модель закупки с полным набором полей."""
-    # Наследует все поля PurchaseIndex, включая документы с исходными данными
-    # в поле source
-        if v is None:
-            return v
-        if not re.match(r"^\d{2}(\.\d{2}){0,3}$", v):
-            raise ValueError(f"Invalid OKPD2 format: {v}")
-        return v
 
 
 class GetPurchaseDetailsRequest(BaseModel):
-    """>45;L 20;840F88 ?0@0<5B@>2 4;O ?>;CG5=8O 45B0;59 70:C?:8."""
+    """Запрос на получение деталей закупки."""
+    purchase_number: str = Field(..., min_length=1, description="Номер закупки")
 
-    purchase_number: str = Field(..., min_length=1)
+    """Документ из карточки закупки."""
 
 
-class PurchaseDocument(BaseModel):
-    """>:C<5=B 70:C?:8."""
+    """Краткая модель закупки из списка."""
+    """Детальная модель закупки с полным набором полей."""
 
-    doc_type: str
-    published_at: datetime
+    # Наследует все поля PurchaseIndex, включая документы с исходными данными
+    # в поле source
+    docs: list[PurchaseDocument]
     source: dict[str, Any] | None = None
 
 
