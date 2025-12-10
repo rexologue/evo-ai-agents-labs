@@ -1,64 +1,78 @@
-"""MCP сервер для финансовых расчетов с HTTP транспортом."""
+"""MCP сервер для работы с данными ГосПлан по HTTP."""
 
-from src.mcp_instance import mcp
-from src.utils.settings import settings
+from __future__ import annotations
 
-import fastmcp
-fastmcp.settings.port = settings.app.port
-fastmcp.settings.host = settings.app.host
+import uvicorn
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
 
-# Импортируем инструменты
+from config import get_settings
+from mcp_instance import mcp
+
+settings = get_settings()
+
 print("🔧 Загружаем инструменты...")
 try:
-    from src.tools.gosplan_search import search_purchases
-
+    from tools.gosplan_search import search_purchases
     print("✅ search_purchases загружен")
-except Exception as e:
-    print(f"❌ Ошибка импорта search_purchases: {e}")
+except Exception as exc:  # pragma: no cover - отладочное сообщение
+    print(f"❌ Ошибка импорта search_purchases: {exc}")
     import traceback
 
     traceback.print_exc()
 
 try:
-    from src.tools.gosplan_details import get_purchase_details
-
+    from tools.gosplan_details import get_purchase_details
     print("✅ get_purchase_details загружен")
-except Exception as e:
-    print(f"❌ Ошибка импорта get_purchase_details: {e}")
+except Exception as exc:  # pragma: no cover - отладочное сообщение
+    print(f"❌ Ошибка импорта get_purchase_details: {exc}")
     import traceback
 
     traceback.print_exc()
 
-print("✅ Все инструменты загружены:")
-print("  - search_purchases (поиск государственных закупок)")
-print("  - get_purchase_details (детали государственной закупки)")
+middleware = [
+    Middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=[
+            "mcp-protocol-version",
+            "mcp-session-id",
+            "Authorization",
+            "Content-Type",
+        ],
+        expose_headers=["mcp-session-id"],
+    )
+]
+
+app = mcp.http_app(middleware=middleware)
 
 
-def main():
-    """Запуск MCP сервера с HTTP транспортом."""
-    print("=" * 60)
-    print("🌐 ЗАПУСК MCP СЕРВЕРА")
-    print("=" * 60)
-    print(f"🚀 MCP Server: http://{settings.app.host}:{settings.app.port}/mcp")
-    print(f"📊 Метрики: http://{settings.app.host}:{settings.app.port}/metrics")
-    print(f"🏥 Health check: http://{settings.app.host}:{settings.app.port}/health")
-    print("🔧 Используйте MCP Inspector для подключения к серверу")
-    print("=" * 60)
-    print("⏳ Запускаем сервер...")
+def main() -> None:
+    """Запускает MCP сервер с HTTP транспортом и CORS."""
 
-    # Запускаем MCP сервер с streamable-http транспортом
+    print("=" * 60)
+    print("🌐 ЗАПУСК MCP СЕРВЕРА (HTTP + CORS)")
+    print("=" * 60)
+    print(f"🚀 MCP Server: http://{settings.server_host}:{settings.server_port}/mcp")
+    print(f"📊 Метрики:    http://{settings.server_host}:{settings.server_port}/metrics")
+    print(f"🏥 Health:     http://{settings.server_host}:{settings.server_port}/health")
+    print("🔧 Используйте MCP Inspector (Connection Type: Direct)")
+    print("=" * 60)
+    print("⏳ Запускаем Uvicorn...")
+
     try:
-        mcp.run(
-            transport="streamable-http",
-            host=settings.app.host,
-            port=settings.app.port
+        uvicorn.run(
+            app,
+            host=settings.server_host,
+            port=settings.server_port,
         )
-    except KeyboardInterrupt:
+    except KeyboardInterrupt:  # pragma: no cover - остановка через Ctrl+C
         print("\n🛑 Получен сигнал остановки (Ctrl+C)")
         print("🔄 Выполняем graceful shutdown...")
         print("✅ Сервер остановлен")
-    except Exception as e:
-        print(f"❌ Ошибка запуска сервера: {e}")
+    except Exception as exc:  # pragma: no cover - отладочное сообщение
+        print(f"❌ Ошибка запуска сервера: {exc}")
         import traceback
 
         traceback.print_exc()

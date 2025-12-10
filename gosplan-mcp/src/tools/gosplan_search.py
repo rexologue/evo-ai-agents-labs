@@ -1,4 +1,4 @@
-"""Инструмент для поиска государственных закупок по 223-ФЗ."""
+"""Инструмент поиска государственных закупок по 223-ФЗ."""
 
 from datetime import datetime
 
@@ -9,8 +9,7 @@ from mcp.types import TextContent
 from opentelemetry import trace
 from pydantic import Field, ValidationError
 
-from ..mcp_instance import mcp
-from ..metrics import API_CALLS
+from mcp_instance import mcp
 from .models import PurchaseIndex, SearchPurchasesRequest
 from .utils import ToolResult, format_api_error, format_purchase_list
 
@@ -47,24 +46,8 @@ async def search_purchases(
     limit: int = Field(20, ge=1, le=100),
     skip: int = Field(0, ge=0),
 ) -> ToolResult:
-    """
-    Поиск государственных закупок по 223-ФЗ.
+    """Поиск государственных закупок по входным параметрам."""
 
-    Args:
-        classifier: Код ОКПД2
-        submission_close_after: Дата окончания подачи заявок (после)
-        submission_close_before: Дата окончания подачи заявок (до)
-        region: Код региона
-        limit: Количество результатов
-        skip: Пропустить первые N результатов
-        ctx: Контекст для логирования
-
-    Returns:
-        ToolResult: Результаты поиска
-
-    Raises:
-        McpError: При ошибках выполнения
-    """
     with tracer.start_as_current_span("search_purchases") as span:
         span.set_attribute("classifier", classifier or "all")
         span.set_attribute("region", region or "all")
@@ -74,18 +57,12 @@ async def search_purchases(
         await ctx.info("🔍 Начинаем поиск государственных закупок")
         await ctx.report_progress(progress=0, total=100)
 
-        API_CALLS.labels(
-            service="gosplan", endpoint="search_purchases", status="started"
-        ).inc()
-
         try:
-            # Этап 1: Валидация и подготовка (0-25%)
             await ctx.info(
                 f"🔧 Параметры поиска: ОКПД2={classifier or 'все'}, "
                 f"регион={region or 'все'}"
             )
 
-            # Преобразование строк datetime в объекты datetime
             try:
                 close_after = (
                     datetime.fromisoformat(submission_close_after)
@@ -103,25 +80,23 @@ async def search_purchases(
                     submission_close_after=close_after,
                     submission_close_before=close_before,
                     region=region,
-                    stage=1,  # Всегда ищем закупки на этапе подачи заявок
-                    currency_code="RUB",  # Всегда ищем в рублях
+                    stage=1,
+                    currency_code="RUB",
                     limit=limit,
                     skip=skip,
                 )
-            except ValueError as e:
+            except ValueError as exc:
                 span.set_attribute("error", "validation_error")
-                await ctx.error(f"❌ Неверные параметры: {e}")
+                await ctx.error(f"❌ Неверные параметры: {exc}")
                 raise McpError(
-                    ErrorData(code=-32602, message=f"Неверные параметры: {e}")
-                )
+                    ErrorData(code=-32602, message=f"Неверные параметры: {exc}")
+                ) from exc
 
             await ctx.report_progress(progress=25, total=100)
 
-            # Этап 2: Выполнение запроса к API (25-75%)
             await ctx.info("📡 Отправляем запрос к API ГосПлан")
             await ctx.report_progress(progress=50, total=100)
 
-            # Формируем параметры запроса (исключаем None)
             query_params = {
                 k: v
                 for k, v in {
@@ -155,30 +130,20 @@ async def search_purchases(
 
             await ctx.report_progress(progress=75, total=100)
 
-            # Этап 3: Обработка результатов (75-100%)
-            await ctx.info("📄 Обрабатываем результаты поиска")
-
-            # Парсим ответ с использованием Pydantic
             try:
                 purchases = [
                     PurchaseIndex(**p) for p in purchases_data
                 ]
-            except ValidationError as e:
+            except ValidationError as exc:
                 span.set_attribute("error", "parse_error")
-                await ctx.error(f"❌ Ошибка парсинга ответа API: {e}")
-                API_CALLS.labels(
-                    service="gosplan",
-                    endpoint="search_purchases",
-                    status="error",
-                ).inc()
+                await ctx.error(f"❌ Ошибка парсинга ответа API: {exc}")
                 raise McpError(
                     ErrorData(
                         code=-32603,
-                        message=f"Ошибка обработки ответа API: {e}",
+                        message=f"Ошибка обработки ответа API: {exc}",
                     )
-                )
+                ) from exc
 
-            # Форматируем для LLM
             formatted_text = format_purchase_list(
                 purchases=[p.model_dump() for p in purchases],
                 total=len(purchases),
@@ -190,108 +155,50 @@ async def search_purchases(
             span.set_attribute("success", True)
             span.set_attribute("results_count", len(purchases))
 
-            API_CALLS.labels(
-                service="gosplan",
-                endpoint="search_purchases",
-                status="success",
-            ).inc()
-
             return ToolResult(
                 content=[TextContent(type="text", text=formatted_text)],
                 structured_content=[p.model_dump() for p in purchases],
-                meta={
-                    "query_params": query_params,
-                    "total_results": len(purchases),
-                    "has_more": len(purchases) == limit,
-                },
+                meta={"count": len(purchases)},
             )
 
-        except httpx.HTTPStatusError as e:
+        except httpx.HTTPStatusError as exc:
             span.set_attribute("error", "http_status_error")
-            span.set_attribute("status_code", e.response.status_code)
+            span.set_attribute("status_code", exc.response.status_code)
 
-            # Специальная обработка 422 (валидация)
-            if e.response.status_code == 422:
-                error_message = format_api_error(
-                    e.response.text, e.response.status_code
-                )
-                await ctx.error(f"❌ {error_message}")
-
-                API_CALLS.labels(
-                    service="gosplan",
-                    endpoint="search_purchases",
-                    status="error",
-                ).inc()
-
-                raise McpError(
-                    ErrorData(code=-32602, message=error_message)
-                )
-
-            # Остальные HTTP ошибки
             error_message = format_api_error(
-                e.response.text if e.response else "",
-                e.response.status_code if e.response else 0,
+                exc.response.text if exc.response else "",
+                exc.response.status_code if exc.response else 0,
             )
 
             await ctx.error(f"❌ HTTP ошибка: {error_message}")
 
-            API_CALLS.labels(
-                service="gosplan",
-                endpoint="search_purchases",
-                status="error",
-            ).inc()
-
             raise McpError(
                 ErrorData(
                     code=-32603,
-                    message=f"Не удалось выполнить поиск.\n\n{error_message}",
+                    message=f"Не удалось получить список закупок.\n\n{error_message}",
                 )
-            )
+            ) from exc
 
-        except httpx.TimeoutException:
+        except httpx.TimeoutException as exc:
             span.set_attribute("error", "timeout")
             await ctx.error("❌ Превышено время ожидания ответа от API")
 
-            API_CALLS.labels(
-                service="gosplan",
-                endpoint="search_purchases",
-                status="error",
-            ).inc()
-
             raise McpError(
                 ErrorData(
                     code=-32603,
-                    message="Превышено время ожидания ответа от API ГосПлан",
+                    message="Превышено время ожидания ответа от API",
                 )
-            )
+            ) from exc
 
-        except httpx.RequestError as e:
+        except httpx.RequestError as exc:
             span.set_attribute("error", "request_error")
-            await ctx.error(f"❌ Ошибка сети: {e}")
-
-            API_CALLS.labels(
-                service="gosplan",
-                endpoint="search_purchases",
-                status="error",
-            ).inc()
+            await ctx.error(f"❌ Ошибка запроса: {exc}")
 
             raise McpError(
-                ErrorData(
-                    code=-32603,
-                    message=f"Ошибка подключения к API ГосПлан: {e}",
-                )
-            )
+                ErrorData(code=-32603, message="Не удалось выполнить запрос к API"),
+            ) from exc
 
-        except Exception as e:
-            span.set_attribute("error", str(e))
-            await ctx.error(f"💥 Неожиданная ошибка: {e}")
-
-            API_CALLS.labels(
-                service="gosplan",
-                endpoint="search_purchases",
-                status="error",
-            ).inc()
-
-            raise McpError(
-                ErrorData(code=-32603, message=f"Неожиданная ошибка: {e}")
-            )
+        except Exception as exc:  # pragma: no cover - отладочная защита
+            span.set_attribute("error", "unexpected_error")
+            await ctx.error(f"❌ Непредвиденная ошибка: {exc}")
+            raise
