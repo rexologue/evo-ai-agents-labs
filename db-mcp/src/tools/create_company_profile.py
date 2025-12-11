@@ -14,25 +14,28 @@ from tools.utils import ToolResult, _require_env_vars
 
 @mcp.tool(
     name="create_company_profile",
-    description="""📝 Создает новый профиль компании и сохраняет его в PostgreSQL.""",
+    description="📝 Создает новый профиль компании и сохраняет его в PostgreSQL.",
 )
 async def create_company_profile(
+    ctx: Context,
     profile: CompanyProfileBase = Field(
         ..., description="Структурированный профиль компании для сохранения"
     ),
-    ctx: Context = None,
 ) -> ToolResult:
-    """Создает профиль компании и возвращает сохраненную запись.
-
-    Args:
-        profile: Описание компании со всеми полями.
-        ctx: Контекст MCP для логирования и прогресса.
-
-    Returns:
-        ToolResult: Сохраненный профиль компании.
-    """
-
     _require_env_vars(["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"])
+    
+    if profile is None:
+        await ctx.info("❌ Профиль не передан в аргументах")
+        return ToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text="Ошибка: не передан аргумент 'profile' при вызове инструмента create_company_profile.",
+                )
+            ],
+            structured_content=None,
+            meta={"operation": "create_company_profile", "error": "missing_profile"},
+        )
 
     await ctx.info("🚀 Создаем профиль компании")
     await ctx.report_progress(progress=0, total=100)
@@ -57,3 +60,4 @@ async def create_company_profile(
         structured_content=saved_profile.model_dump(),
         meta={"operation": "create_company_profile"},
     )
+
