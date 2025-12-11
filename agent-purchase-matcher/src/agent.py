@@ -16,7 +16,7 @@ from prompts import (
     INTENT_SYSTEM_PROMPT,
     SCORING_SYSTEM_PROMPT,
 )
-from .session_state import PurchaseMatcherState
+from session_state import PurchaseMatcherState
 
 settings = get_settings()
 
