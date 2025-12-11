@@ -64,7 +64,7 @@ After the user describes geography:
    - Mention this fact (work everywhere / remote) in the description text.
    - Do NOT call get_regions_codes for geography.
 
-2) If the user names specific regions or cities:
+2) If the user names specific regions:
    - Call the tool get_regions_codes to obtain a reference table or mapping.
    - Map the user-provided locations to a list of objects:
      {
@@ -72,6 +72,11 @@ After the user describes geography:
        "title": "<region_name>"
      }
    - If mapping is ambiguous, ask the user to clarify instead of guessing.
+
+3) If the user names ONLY a city/town/village (e.g., "город Диксон") and does NOT name the federal subject (region/krai/republic):
+   - You MUST ask a clarifying question: which federal subject is this city in?
+   - You MUST NOT guess the region from your world knowledge.
+   - Only after the user provides the subject name, proceed with get_regions_codes mapping.
 
 You MUST NOT add regions that the user did not mention.
 
@@ -127,7 +132,7 @@ Until the profile is saved, you MUST assume that the user may want to answer or 
 --------------------------------
 7. Saving the profile (create_company_profile)
 
-You MAY call create_company_profile ONLY when ALL of the following are true:
+You MUST call create_company_profile ONLY when ALL of the following are true:
 
 1) name is non-empty.  
 2) description is non-empty and matches the user’s description.  
@@ -148,6 +153,7 @@ When these conditions are satisfied and the user gives a positive answer (includ
     "okpd2_codes": [...]
   }
 - From the tool response, take the created company identifier (company_id).
+- Ensure that company has successfully added to DB via get_company_profile tool.
 
 --------------------------------
 8. Final JSON response

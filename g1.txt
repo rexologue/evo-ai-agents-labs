@@ -1,0 +1,694 @@
+##############
+# FILE: .env #
+##############
+
+# Обязательные переменные
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=postgres
+DB_USER=postgres
+DB_PASSWORD=postgres
+
+# Настройки MCP транспорта
+DB_MCP_HOST=0.0.0.0
+DB_MCP_PORT=28001
+
+# Другие настройки MCP
+LOG_LEVEL=INFO
+
+
+######################
+# FILE: .env.example #
+######################
+
+# Обязательные переменные
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=agents
+DB_USER=postgres
+DB_PASSWORD=postgres
+
+# Настройки MCP транспорта
+DB_MCP_HOST=0.0.0.0
+DB_MCP_PORT=8000
+
+# Другие настройки MCP
+LOG_LEVEL=INFO
+
+
+####################
+# FILE: Dockerfile #
+####################
+
+# Используем официальный образ Python 3.13 slim для минимального размера
+FROM python:3.13-slim
+
+# Устанавливаем рабочую директорию
+WORKDIR /app
+
+# Устанавливаем системные зависимости и uv в одном слое для оптимизации
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir uv
+
+# Копируем файлы конфигурации uv сначала для лучшего кеширования Docker слоев
+COPY db-mcp/pyproject.toml ./
+
+# Создаем виртуальное окружение и устанавливаем зависимости
+# Используем тот же подход, что и локально
+RUN uv sync --no-editable
+
+# Копируем исходный код приложения
+COPY db-mcp/src/ ./src/
+COPY models.py ./src/models.py
+
+# Создаем непривилегированного пользователя для безопасности
+RUN useradd --create-home --shell /bin/bash --uid 1000 mcp && \
+    chown -R mcp:mcp /app
+
+# Переключаемся на непривилегированного пользователя
+USER mcp
+
+# Открываем порт для MCP сервера (см. server.py → 8000)
+EXPOSE 8000
+
+# Устанавливаем переменные окружения для оптимальной работы Python
+ENV PYTHONPATH=/app \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONHASHSEED=random \
+    UV_SYSTEM_PYTHON=1
+
+# Команда запуска сервера - точно так же, как локально
+CMD ["uv", "run", "python", "src/server.py"]
+
+
+########################
+# FILE: pyproject.toml #
+########################
+
+[project]
+name = "db-mcp"
+version = "0.1.0"
+description = "MCP server for company profiles and tender matches backed by PostgreSQL"
+authors = [
+    { name = "rexologue", email = "mironovigoroffical@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp>=0.5.0",
+    "uvicorn",
+    "opentelemetry-api>=1.25.0",
+    "pydantic>=2.6",
+    "python-dotenv>=1.0",
+    "psycopg[binary]>=3.1",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+
+#########################
+# FILE: src/__init__.py #
+#########################
+
+
+
+#######################
+# FILE: src/config.py #
+#######################
+
+import os
+import logging
+from typing import Optional
+
+from pydantic import Field, ValidationError
+from pydantic_settings import BaseSettings
+
+from dotenv import load_dotenv, find_dotenv
+load_dotenv(find_dotenv())
+
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("db-mcp")
+
+
+class Settings(BaseSettings):
+    db_host: str = Field(..., alias="DB_HOST")
+    db_port: int = Field(..., alias="DB_PORT")
+    db_name: str = Field(..., alias="DB_NAME")
+    db_user: str = Field(..., alias="DB_USER")
+    db_password: str = Field(..., alias="DB_PASSWORD")
+    server_port: int = Field(..., alias="DB_MCP_PORT")
+    server_host: str = Field(..., alias="DB_MCP_HOST")
+
+
+# ------------------------------------------------------------------------------
+# Фабрика
+# ------------------------------------------------------------------------------
+_settings_cache: Optional[Settings] = None
+
+
+def get_settings() -> Settings:
+    """Singleton-кеш, чтобы не пересоздавать настройки 100 раз"""
+    global _settings_cache
+    
+    if _settings_cache is None:
+        try:
+            _settings_cache = Settings()
+            
+        except ValidationError as e:
+            logger.error("❌ Invalid configuration:")
+            logger.error(e)
+            raise
+        
+    return _settings_cache
+
+
+###################
+# FILE: src/db.py #
+###################
+
+"""Утилиты работы с PostgreSQL для профилей компаний."""
+
+from __future__ import annotations
+
+import json
+from contextlib import contextmanager
+from datetime import datetime
+from typing import Any, Iterable
+from uuid import uuid4
+
+import psycopg
+
+from config import get_settings
+from models import CompanyProfileBase, CompanyProfileDB
+
+settings = get_settings()
+
+
+@contextmanager
+def get_conn():
+    """Создает подключение к PostgreSQL с автокоммитом."""
+
+    conn = psycopg.connect(
+        host=settings.db_host,
+        port=settings.db_port,
+        dbname=settings.db_name,
+        user=settings.db_user,
+        password=settings.db_password,
+        autocommit=True,
+    )
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+def ensure_tables() -> None:
+    """Создает таблицы, если их еще нет."""
+
+    create_sql = """
+    CREATE TABLE IF NOT EXISTS companies (
+        id UUID PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        profile_json JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL
+    );
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(create_sql)
+
+
+def map_row_to_profile(row: Iterable[Any]) -> CompanyProfileDB:
+    """Преобразует строку БД в модель CompanyProfileDB."""
+
+    (
+        company_id,
+        name,
+        description,
+        profile_json,
+        created_at,
+        updated_at,
+    ) = row
+    base_profile = CompanyProfileBase(**profile_json)
+    profile_data = base_profile.model_dump()
+    profile_data["name"] = name
+    profile_data["description"] = description
+    return CompanyProfileDB(
+        id=company_id,
+        created_at=created_at,
+        updated_at=updated_at,
+        **profile_data,
+    )
+
+
+def insert_company_profile(profile: CompanyProfileBase) -> CompanyProfileDB:
+    """Сохраняет профиль компании в PostgreSQL."""
+
+    now = datetime.utcnow()
+    company_id = uuid4()
+    profile_dict = json.loads(profile.model_dump_json())
+
+    sql = """
+    INSERT INTO companies (id, name, description, profile_json, created_at, updated_at)
+    VALUES (%s, %s, %s, %s, %s, %s)
+    RETURNING id, name, description, profile_json, created_at, updated_at;
+    """
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                sql,
+                (
+                    company_id,
+                    profile.name,
+                    profile.description,
+                    json.dumps(profile_dict),
+                    now,
+                    now,
+                ),
+            )
+            row = cur.fetchone()
+            return map_row_to_profile(row)
+
+
+def fetch_company_profile(company_id: str) -> CompanyProfileDB:
+    """Возвращает профиль компании по идентификатору."""
+
+    sql = """
+    SELECT id, name, description, profile_json, created_at, updated_at
+    FROM companies
+    WHERE id = %s;
+    """
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (company_id,))
+            row = cur.fetchone()
+            if not row:
+                raise ValueError("Company not found")
+            return map_row_to_profile(row)
+
+
+def fetch_company_profiles(query: str | None, limit: int, offset: int) -> list[CompanyProfileDB]:
+    """Возвращает список профилей компаний с поиском и пагинацией."""
+
+    base_sql = """
+    SELECT id, name, description, profile_json, created_at, updated_at
+    FROM companies
+    """
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            if query:
+                like = f"%{query}%"
+                sql = base_sql + """
+                WHERE name ILIKE %s OR description ILIKE %s
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s;
+                """
+                params = (like, like, limit, offset)
+            else:
+                sql = base_sql + """
+                ORDER BY created_at DESC
+                LIMIT %s OFFSET %s;
+                """
+                params = (limit, offset)
+
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+            return [map_row_to_profile(row) for row in rows]
+
+
+
+#############################
+# FILE: src/mcp_instance.py #
+#############################
+
+"""Единый экземпляр FastMCP для всего приложения."""
+
+from fastmcp import FastMCP
+
+mcp = FastMCP(
+    "PostgreSQL-backed MCP for company profiles",
+)
+
+
+#######################
+# FILE: src/server.py #
+#######################
+
+"""MCP сервер для работы с профилями компаний в PostgreSQL."""
+
+from __future__ import annotations
+
+from config import get_settings
+from db import ensure_tables
+
+# CORS + ASGI
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
+import uvicorn
+
+# Единый экземпляр FastMCP
+from mcp_instance import mcp
+
+settings = get_settings()
+ensure_tables()
+
+# Импортируем инструменты (как и раньше)
+print("🔧 Загружаем инструменты...")
+try:
+    from tools.create_company_profile import create_company_profile
+    print("✅ create_company_profile загружен")
+except Exception as e:
+    print(f"❌ Ошибка импорта create_company_profile: {e}")
+    import traceback
+    traceback.print_exc()
+
+try:
+    from tools.get_company_profile import get_company_profile
+    print("✅ get_company_profile загружен")
+except Exception as e:
+    print(f"❌ Ошибка импорта get_company_profile: {e}")
+    import traceback
+    traceback.print_exc()
+
+try:
+    from tools.list_company_profiles import list_company_profiles
+    print("✅ list_company_profiles загружен")
+except Exception as e:
+    print(f"❌ Ошибка импорта list_company_profiles: {e}")
+    import traceback
+    traceback.print_exc()
+
+# --- CORS middleware специально для MCP Inspector ---
+
+middleware = [
+    Middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # для разработки; в проде лучше указать конкретный origin
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=[
+            "mcp-protocol-version",
+            "mcp-session-id",
+            "Authorization",
+            "Content-Type",
+        ],
+        expose_headers=["mcp-session-id"],
+    )
+]
+
+# ASGI-приложение FastMCP c CORS
+app = mcp.http_app(middleware=middleware)  # по умолчанию путь /mcp
+
+
+def main():
+    """Запуск MCP сервера с HTTP транспортом и CORS."""
+    print("=" * 60)
+    print("🌐 ЗАПУСК MCP СЕРВЕРА (HTTP + CORS)")
+    print("=" * 60)
+    print(f"🚀 MCP Server: http://{settings.server_host}:{settings.server_port}/mcp")
+    print(f"📊 Метрики:    http://{settings.server_host}:{settings.server_port}/metrics")
+    print(f"🏥 Health:     http://{settings.server_host}:{settings.server_port}/health")
+    print("🔧 Используйте MCP Inspector (Connection Type: Direct)")
+    print("=" * 60)
+    print("⏳ Запускаем Uvicorn...")
+
+    try:
+        uvicorn.run(
+            app,
+            host=settings.server_host,
+            port=settings.server_port,
+        )
+    except KeyboardInterrupt:
+        print("\n🛑 Получен сигнал остановки (Ctrl+C)")
+        print("🔄 Выполняем graceful shutdown...")
+        print("✅ Сервер остановлен")
+    except Exception as e:
+        print(f"❌ Ошибка запуска сервера: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+if __name__ == "__main__":
+    main()
+
+
+###############################
+# FILE: src/tools/__init__.py #
+###############################
+
+"""Набор MCP инструментов для работы с компаниями."""
+
+
+#############################################
+# FILE: src/tools/create_company_profile.py #
+#############################################
+
+"""Инструмент создания профиля компании в БД."""
+
+from __future__ import annotations
+
+from fastmcp import Context
+from mcp.types import TextContent
+from pydantic import Field
+
+from db import ensure_tables, insert_company_profile
+from mcp_instance import mcp
+from models import CompanyProfileBase
+from tools.utils import ToolResult, _require_env_vars
+
+
+@mcp.tool(
+    name="create_company_profile",
+    description="📝 Создает новый профиль компании и сохраняет его в PostgreSQL.",
+)
+async def create_company_profile(
+    ctx: Context,
+    profile: CompanyProfileBase = Field(
+        ..., description="Структурированный профиль компании для сохранения"
+    ),
+) -> ToolResult:
+    _require_env_vars(["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"])
+    
+    if profile is None:
+        await ctx.info("❌ Профиль не передан в аргументах")
+        return ToolResult(
+            content=[
+                TextContent(
+                    type="text",
+                    text="Ошибка: не передан аргумент 'profile' при вызове инструмента create_company_profile.",
+                )
+            ],
+            structured_content=None,
+            meta={"operation": "create_company_profile", "error": "missing_profile"},
+        )
+
+    await ctx.info("🚀 Создаем профиль компании")
+    await ctx.report_progress(progress=0, total=100)
+
+    ensure_tables()
+    await ctx.info("🔧 Проверили схему БД")
+    await ctx.report_progress(progress=25, total=100)
+
+    saved_profile = insert_company_profile(profile)
+    await ctx.report_progress(progress=75, total=100)
+    await ctx.info("✅ Профиль успешно сохранен")
+
+    await ctx.report_progress(progress=100, total=100)
+
+    return ToolResult(
+        content=[
+            TextContent(
+                type="text",
+                text=f"Профиль компании {saved_profile.name} сохранен с id {saved_profile.id}",
+            )
+        ],
+        structured_content=saved_profile.model_dump(),
+        meta={"operation": "create_company_profile"},
+    )
+
+
+
+##########################################
+# FILE: src/tools/get_company_profile.py #
+##########################################
+
+"""Инструмент получения профиля компании по UUID."""
+
+from __future__ import annotations
+
+from fastmcp import Context
+from mcp.shared.exceptions import ErrorData, McpError
+from mcp.types import TextContent
+from pydantic import Field
+
+from db import ensure_tables, fetch_company_profile
+from mcp_instance import mcp
+from tools.utils import ToolResult, _require_env_vars
+
+
+@mcp.tool(
+    name="get_company_profile",
+    description="""🔍 Возвращает профиль компании по UUID.""",
+)
+async def get_company_profile(
+    company_id: str = Field(..., description="UUID компании"),
+    ctx: Context = None,
+) -> ToolResult:
+    """Получает профиль компании по идентификатору.
+
+    Args:
+        company_id: UUID компании.
+        ctx: Контекст MCP для логирования.
+
+    Returns:
+        ToolResult: Найденный профиль компании.
+
+    Raises:
+        McpError: Если компания не найдена.
+    """
+
+    _require_env_vars(["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"])
+
+    await ctx.info("🔎 Ищем профиль компании")
+    await ctx.report_progress(progress=0, total=100)
+
+    ensure_tables()
+    await ctx.report_progress(progress=25, total=100)
+
+    try:
+        profile = fetch_company_profile(company_id)
+    except ValueError as exc:
+        await ctx.error(f"❌ Компания с id {company_id} не найдена")
+
+        raise McpError(
+            ErrorData(code=-32601, message=f"Компания {company_id} не найдена")
+        )
+
+    await ctx.report_progress(progress=100, total=100)
+    await ctx.info("✅ Профиль найден")
+
+    return ToolResult(
+        content=[
+            TextContent(
+                type="text",
+                text=f"Компания {profile.name}: {profile.description}",
+            )
+        ],
+        structured_content=profile.model_dump(),
+        meta={"operation": "get_company_profile"},
+    )
+
+
+############################################
+# FILE: src/tools/list_company_profiles.py #
+############################################
+
+"""Инструмент получения списка профилей компаний."""
+
+from __future__ import annotations
+
+from fastmcp import Context
+from mcp.types import TextContent
+from pydantic import Field
+
+from db import ensure_tables, fetch_company_profiles
+from mcp_instance import mcp
+from tools.utils import ToolResult, _require_env_vars
+
+
+@mcp.tool(
+    name="list_company_profiles",
+    description="""📄 Список профилей компаний с поиском и пагинацией.""",
+)
+async def list_company_profiles(
+    query: str | None = Field(
+        default=None, description="Опциональный поисковый запрос по имени или описанию"
+    ),
+    limit: int = Field(default=20, description="Количество записей в выдаче"),
+    offset: int = Field(default=0, description="Смещение для пагинации"),
+    ctx: Context = None,
+) -> ToolResult:
+    """Возвращает список профилей компаний.
+
+    Args:
+        query: Строка поиска по имени или описанию.
+        limit: Количество элементов.
+        offset: Смещение выдачи.
+        ctx: Контекст MCP.
+
+    Returns:
+        ToolResult: Список профилей компаний.
+    """
+
+    _require_env_vars(["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"])
+
+    await ctx.info("📑 Получаем список профилей компаний")
+    await ctx.report_progress(progress=0, total=100)
+
+    ensure_tables()
+    await ctx.report_progress(progress=25, total=100)
+
+    profiles = fetch_company_profiles(query, limit, offset)
+    await ctx.report_progress(progress=100, total=100)
+    await ctx.info(f"✅ Найдено профилей: {len(profiles)}")
+
+    formatted = "\n".join([f"- {profile.name}" for profile in profiles]) or "Нет записей"
+
+    return ToolResult(
+        content=[TextContent(type="text", text=formatted)],
+        structured_content={"items": [p.model_dump() for p in profiles]},
+        meta={"operation": "list_company_profiles"},
+    )
+
+
+############################
+# FILE: src/tools/utils.py #
+############################
+
+"""Общие утилиты для MCP инструментов db-mcp."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass, field
+from typing import Any
+
+from mcp.shared.exceptions import ErrorData, McpError
+from mcp.types import Content
+
+
+@dataclass
+class ToolResult:
+    """Стандартный ответ MCP инструмента."""
+
+    content: list[Content]
+    structured_content: dict[str, Any] = field(default_factory=dict)
+    meta: dict[str, Any] = field(default_factory=dict)
+
+
+def _require_env_vars(names: list[str]) -> dict[str, str]:
+    """Проверяет наличие обязательных переменных окружения."""
+
+    missing = [name for name in names if not os.getenv(name)]
+    if missing:
+        raise McpError(
+            ErrorData(
+                code=-32602,
+                message="Отсутствуют обязательные переменные окружения: "
+                + ", ".join(missing),
+            )
+        )
+    return {name: os.getenv(name, "") for name in names}
+
+

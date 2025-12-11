@@ -1,0 +1,1054 @@
+##############
+# FILE: .env #
+##############
+
+# Настройки MCP
+DB_MCP_URL=https://129e8b6a-b7f6-472b-bc68-e1472c4c408a-mcp-server.ai-agent.inference.cloud.ru/mcp
+CODES_MCP_URL=https://5734e495-ab23-498d-9bd6-fdfcddaef236-mcp-server.ai-agent.inference.cloud.ru/mcp
+
+# Agent Configuration
+AGENT_NAME=CompanyProfiler
+AGENT_DESCRIPTION="LangChain Agent для формирования профиля компаний"
+AGENT_HOST=0.0.0.0
+AGENT_PORT=28003
+AGENT_VERSION=v1.0.0
+
+NzM1ZTA5YmMtNjcxYy00MjQzLTg2MTAtMWY5M2U0OWYwYmFl.7bffeb1bf71b3c059a79f4806ae43bcc
+
+# Обязательные для агента переменные
+# LLM_API_KEY=NzM1ZTA5YmMtNjcxYy00MjQzLTg2MTAtMWY5M2U0OWYwYmFl.7bffeb1bf71b3c059a79f4806ae43bcc
+# LLM_MODEL=Qwen/Qwen3-235B-A22B-Instruct-2507
+# LLM_API_BASE=https://foundation-models.api.cloud.ru/v1
+
+LLM_API_KEY=NzM1ZTA5YmMtNjcxYy00MjQzLTg2MTAtMWY5M2U0OWYwYmFl.862995d923689ffa59bd4256a1e136ec
+LLM_MODEL=Qwen/Qwen3-14B-AWQ
+LLM_API_BASE=http://localhost:28000/v1
+
+######################
+# FILE: .env.example #
+######################
+
+# Настройки MCP
+DB_MCP_URL=http://db-mcp:8000
+CODES_MCP_URL=http://codes-mcp:8001
+
+# Agent Configuration
+AGENT_NAME=CompanyProfiler
+AGENT_DESCRIPTION="LangChain Agent для формирования профиля компаний"
+AGENT_HOST=0.0.0.0
+AGENT_PORT=8002
+AGENT_URL=https://your-agent-id-agent.ai-agent.inference.cloud.ru
+AGENT_VERSION=v1.0.0
+
+# Обязательные для агента переменные
+LLM_API_KEY=your_openai_key
+LLM_MODEL=gpt-4o-mini
+LLM_API_BASE=https://api.openai.com/v1
+
+
+####################
+# FILE: Dockerfile #
+####################
+
+# Используем официальный образ Python 3.13 slim для минимального размера
+FROM python:3.13-slim
+
+# Устанавливаем рабочую директорию
+WORKDIR /app
+
+# Устанавливаем системные зависимости и uv в одном слое для оптимизации
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir uv
+
+# Копируем файлы конфигурации uv сначала для лучшего кеширования Docker слоев
+COPY agent-profiler/pyproject.toml ./
+
+# Создаем виртуальное окружение и устанавливаем зависимости
+# Используем тот же подход, что и локально
+RUN uv sync --no-editable
+
+# Копируем исходный код приложения
+COPY agent-profiler/src/ ./src/
+COPY models.py ./src/models.py
+
+# Создаем непривилегированного пользователя для безопасности
+RUN useradd --create-home --shell /bin/bash --uid 1000 mcp && \
+    chown -R mcp:mcp /app
+
+# Переключаемся на непривилегированного пользователя
+USER mcp
+
+# Открываем порт для A2A сервера агента (AGENT_PORT по умолчанию 8001)
+EXPOSE 8001
+
+# Устанавливаем переменные окружения для оптимальной работы Python
+ENV PYTHONPATH=/app \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONHASHSEED=random \
+    UV_SYSTEM_PYTHON=1
+
+# Команда запуска сервера - точно так же, как локально
+CMD ["uv", "run", "python", "src/start_a2a.py"]
+
+
+########################
+# FILE: pyproject.toml #
+########################
+
+[project]
+name = "agent-service"
+version = "0.1.0"
+description = "ProfileAgent for classifying company descriptions via codes-mcp and storing via db-mcp"
+authors = [
+    { name = "rexologue", email = "mironovigoroffical@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "fastmcp>=0.5.0",
+    "pydantic>=2.6",
+    "python-dotenv>=1.0",
+    "rapidfuzz>=3.9",
+
+    # Новый стек LangChain v1
+    "langchain>=1.1.0,<2.0.0",
+    "langchain-core>=1.1.0,<2.0.0",
+    "langchain-openai>=1.0.0,<2.0.0",
+
+    # КЛАССИЧЕСКИЙ API (старые агенты, AgentExecutor и т.д.)
+    "langchain-classic>=1.0.0,<2.0.0",
+
+    # MCP адаптер
+    "langchain_mcp_adapters>=0.2.1",
+
+    # A2A SDK
+    "a2a-sdk>=0.3.4,<0.4.0",
+
+    # Observability / tracing
+    "litellm>=1.76.3,<2.0.0",
+    "openinference-instrumentation-langchain>=0.1.0,<0.2.0",
+    "arize-phoenix-otel>=0.13.0,<0.14.0",
+
+    # Сетевуха / сервер
+    "httpx>=0.27.0,<1.0.0",
+    "uvicorn>=0.30.0,<1.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+
+#########################
+# FILE: src/__init__.py #
+#########################
+
+
+
+############################
+# FILE: src/a2a_wrapper.py #
+############################
+
+############################
+# FILE: src/a2a_wrapper.py #
+############################
+
+"""Обертка LangChain агента для A2A протокола."""
+
+import re
+import asyncio
+import logging
+from typing import Dict, Any, AsyncGenerator, List, Optional
+
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+
+logger = logging.getLogger(__name__)
+
+_THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_think_blocks(text: str) -> str:
+    """Удаляет из ответа скрытые блоки размышлений `<think>...</think>`."""
+    if not text:
+        return text
+    return _THINK_BLOCK_RE.sub("", text).strip()
+
+
+def _was_create_company_profile_called(intermediate_steps: Any) -> bool:
+    """Проверяет по intermediate_steps, вызывался ли тул create_company_profile
+    с НОРМАЛЬНЫМИ аргументами (а не просто с пустым {}).
+    """
+    if not intermediate_steps:
+        return False
+
+    try:
+        for step in intermediate_steps:
+            if not isinstance(step, (list, tuple)) or not step:
+                continue
+
+            action = step[0]
+            tool_name: Optional[str] = getattr(action, "tool", None) or getattr(
+                action, "name", None
+            )
+            if not tool_name or "create_company_profile" not in str(tool_name):
+                continue
+
+            tool_input = getattr(action, "tool_input", None)
+
+            # Нам важно, что там действительно есть profile
+            if isinstance(tool_input, dict) and tool_input.get("profile"):
+                logger.info(
+                    "Detected create_company_profile call with profile in intermediate_steps"
+                )
+                return True
+
+    except Exception as exc:
+        logger.warning("Failed to inspect intermediate_steps: %s", exc)
+
+    return False
+
+
+
+class LangChainA2AWrapper:
+    """Обертка для преобразования LangChain агента в A2A-совместимый интерфейс."""
+
+    # Для совместимости с A2A
+    SUPPORTED_CONTENT_TYPES = ["text", "text/plain"]
+
+    def __init__(
+        self, agent_executor, auto_reset_on_complete: bool = True
+    ) -> None:
+        self.agent_executor = agent_executor
+        # история как список BaseMessage (HumanMessage / AIMessage)
+        self.sessions: Dict[str, List[BaseMessage]] = {}
+
+        # включаем/выключаем автоочистку сессии после завершения задачи
+        self.auto_reset_on_complete = auto_reset_on_complete
+
+    def _get_session_history(self, session_id: str) -> List[BaseMessage]:
+        """Получает историю сессии для подстановки в MessagesPlaceholder(chat_history)."""
+        if session_id not in self.sessions:
+            self.sessions[session_id] = []
+        return self.sessions[session_id]
+
+    def _reset_session(self, session_id: str) -> None:
+        """Полностью сбрасывает историю для сессии (логическое завершение контекста)."""
+        if session_id in self.sessions:
+            del self.sessions[session_id]
+            logger.debug("Session %s has been reset (task complete).", session_id)
+
+    async def invoke(self, query: str, session_id: str) -> Dict[str, Any]:
+        """Синхронный (не-стриминговый) вызов агента."""
+        try:
+            chat_history = self._get_session_history(session_id)
+
+            loop = asyncio.get_event_loop()
+            result = await loop.run_in_executor(
+                None,
+                lambda: self.agent_executor.invoke(
+                    {
+                        "input": query,
+                        "chat_history": chat_history,
+                    }
+                ),
+            )
+
+            intermediate_steps = None
+            if isinstance(result, dict):
+                raw_output = result.get("output", "")
+                intermediate_steps = result.get("intermediate_steps")
+            else:
+                raw_output = str(result)
+
+            clean_output = _strip_think_blocks(raw_output)
+
+            # обновляем историю диалога
+            if query:
+                chat_history.append(HumanMessage(content=query))
+            if clean_output:
+                chat_history.append(AIMessage(content=clean_output))
+
+            tool_called = _was_create_company_profile_called(intermediate_steps)
+
+            # Критерий завершения:
+            #   задача завершена, когда был вызван тул create_company_profile.
+            #   Всё остальное — ещё рабочий процесс, и после ответа пользователя логично ждать.
+            is_task_complete = bool(tool_called)
+
+            # Пока профиль не сохранён, и есть текст — ожидаем ответ пользователя
+            require_user_input = not is_task_complete and bool(
+                clean_output and clean_output.strip()
+            )
+
+            response = {
+                "is_task_complete": is_task_complete,
+                "require_user_input": require_user_input,
+                "content": clean_output,
+                "is_error": False,
+                "is_event": False,
+            }
+
+            if self.auto_reset_on_complete and is_task_complete:
+                self._reset_session(session_id)
+
+            return response
+
+        except Exception as e:
+            logger.exception("Error in LangChainA2AWrapper.invoke")
+            return {
+                "is_task_complete": True,
+                "require_user_input": False,
+                "content": f"Ошибка: {str(e)}",
+                "is_error": True,
+                "is_event": False,
+            }
+
+    async def stream(self, query: str, session_id: str) -> AsyncGenerator[Dict[str, Any], None]:
+        """Стриминговый вызов агента."""
+        try:
+            chat_history = self._get_session_history(session_id)
+            logger.info(
+                "LC-A2A stream: session_id=%s, history_len(before)=%d",
+                session_id,
+                len(chat_history),
+            )
+
+            full_response = ""
+            tool_called: bool = False
+
+            async for chunk in self.agent_executor.astream(
+                {
+                    "input": query,
+                    "chat_history": chat_history,
+                }
+            ):
+                if not isinstance(chunk, dict):
+                    continue
+
+                # Поток основного текста
+                if "output" in chunk and isinstance(chunk["output"], str):
+                    delta = chunk["output"]
+                    if delta:
+                        full_response += delta
+                        # Промежуточные токены — просто "working", без ожидания ввода
+                        yield {
+                            "is_task_complete": False,
+                            "require_user_input": False,
+                            "content": delta,
+                            "is_error": False,
+                            "is_event": False,
+                        }
+
+                # Поток шагов с инструментами
+                if "intermediate_steps" in chunk:
+                    steps_batch = chunk["intermediate_steps"] or []
+                    if _was_create_company_profile_called(steps_batch):
+                        tool_called = True
+
+            # После окончания стрима обрабатываем накопленный ответ
+            clean_full = _strip_think_blocks(full_response)
+
+            # Обновляем историю диалога
+            if query:
+                chat_history.append(HumanMessage(content=query))
+            if clean_full:
+                chat_history.append(AIMessage(content=clean_full))
+
+            logger.debug(
+                "LC-A2A stream: session_id=%s, history_len(after)=%d",
+                session_id,
+                len(chat_history),
+            )
+
+            # Завершение – по факту вызова create_company_profile
+            is_task_complete = bool(tool_called)
+            require_user_input = not is_task_complete and bool(
+                clean_full and clean_full.strip()
+            )
+
+            if not full_response or clean_full != full_response:
+                final_payload = {
+                    "is_task_complete": is_task_complete,
+                    "require_user_input": require_user_input,
+                    "content": clean_full,
+                    "is_error": False,
+                    "is_event": False,
+                }
+            else:
+                # Весь текст уже ушёл стримом, финальное сообщение — только статус
+                final_payload = {
+                    "is_task_complete": is_task_complete,
+                    "require_user_input": require_user_input,
+                    "content": "",
+                    "is_error": False,
+                    "is_event": False,
+                }
+
+            if self.auto_reset_on_complete and is_task_complete:
+                self._reset_session(session_id)
+
+            # Отдаём финальное сообщение
+            yield final_payload
+
+        except Exception as e:
+            logger.exception("Error in LangChainA2AWrapper.stream")
+            yield {
+                "is_task_complete": True,
+                "require_user_input": False,
+                "content": f"Ошибка: {str(e)}",
+                "is_error": True,
+                "is_event": False,
+            }
+
+
+######################
+# FILE: src/agent.py #
+######################
+
+"""Определение LangChain агента с поддержкой MCP инструментов и классификацией по ОКПД2."""
+
+from __future__ import annotations
+
+import asyncio
+import sys
+import types
+from typing import List, Optional, Dict
+
+from langchain_openai import ChatOpenAI
+from langchain_core.tools import BaseTool
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+
+# ВАЖНО: классический AgentExecutor и tool-calling агент
+from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
+
+
+def _ensure_langchain_content_module() -> None:
+    """Ensure langchain-mcp-adapters can import ``langchain_core.messages.content``."""
+
+    if "langchain_core.messages.content" in sys.modules:
+        return
+
+    try:
+        from langchain_core.messages import content_blocks
+    except Exception:
+        return
+
+    shim = types.ModuleType("langchain_core.messages.content")
+    shim.__dict__.update(content_blocks.__dict__)
+    sys.modules["langchain_core.messages.content"] = shim
+
+
+_ensure_langchain_content_module()
+
+
+from langchain_mcp_adapters.client import MultiServerMCPClient  # MCP <-> LangChain
+
+from config import get_settings, logger
+from base_prompt import BASE_SYSTEM_PROMPT
+
+settings = get_settings()
+
+
+def _normalize_mcp_url(raw: str) -> str:
+    """Нормализует URL MCP сервера к виду .../mcp."""
+    raw = (raw or "").strip()
+    if not raw:
+        raise ValueError("Пустой MCP URL")
+
+    # уже /mcp или /mcp/
+    if raw.rstrip("/").endswith("/mcp"):
+        return raw.rstrip("/")
+
+    return raw.rstrip("/") + "/mcp"
+
+
+def _build_mcp_client(mcp_urls: Optional[str]) -> Optional[MultiServerMCPClient]:
+    """
+    Создаёт MultiServerMCPClient по строке с MCP URL-ами.
+
+    Поддерживаем форматы:
+      - "http://db-mcp:28001/mcp"
+      - "http://db-mcp:28001"
+      - "finance=http://db-mcp:28001/mcp"
+      - "finance=http://db-mcp:28001,gosplan=http://gosplan-mcp:28002/mcp"
+    """
+    if not mcp_urls:
+        return None
+
+    servers: Dict[str, dict] = {}
+
+    for idx, item in enumerate(mcp_urls.split(",")):
+        item = item.strip()
+        if not item:
+            continue
+
+        if "=" in item:
+            name, url = item.split("=", 1)
+            name = name.strip() or f"mcp_{idx}"
+            url = url.strip()
+        else:
+            name = f"mcp_{idx}"
+            url = item.strip()
+
+        if not url:
+            continue
+
+        url = _normalize_mcp_url(url)
+
+        servers[name] = {
+            "transport": "streamable_http",  # streamable HTTP поверх FastMCP
+            "url": url,
+        }
+
+    if not servers:
+        return None
+
+    return MultiServerMCPClient(servers)
+
+
+async def _get_mcp_tools_async(mcp_urls: Optional[str]) -> List[BaseTool]:
+    """Асинхронная загрузка всех тулов со всех MCP-серверов."""
+    client = _build_mcp_client(mcp_urls)
+    if client is None:
+        return []
+
+    tools = await client.get_tools()
+    return list(tools)
+
+
+def get_mcp_tools(mcp_urls: Optional[str]) -> List[BaseTool]:
+    """Синхронная обёртка над асинхронной загрузкой MCP-тулов."""
+    if not mcp_urls:
+        return []
+    return asyncio.run(_get_mcp_tools_async(mcp_urls))
+
+
+def create_langchain_agent(
+    mcp_urls: str | list[str] | None = None
+) -> AgentExecutor:
+    """Создает LangChain агента с MCP инструментами"""
+    logger.info("LLM: model=%s base_url=%s", settings.llm_model, settings.llm_api_base)
+    
+    settings.llm_model = settings.llm_model.replace("hosted_vllm/", "")
+    
+    # LLM
+    llm = ChatOpenAI(
+        model=settings.llm_model,
+        base_url=settings.llm_api_base,
+        api_key=settings.llm_api_key,
+        temperature=0.1,
+    )
+
+    # Инструменты MCP (db-mcp и др.)
+    mcp_tools = []
+
+    if isinstance(mcp_urls, list):
+        for url in mcp_urls:
+            mcp_tools.extend(get_mcp_tools(url))
+    elif isinstance(mcp_urls, str):
+        mcp_tools.extend(get_mcp_tools(mcp_urls))
+
+    tool_names = [getattr(tool, "name", "") for tool in mcp_tools]
+    logger.info("MCP tools loaded: %s", ", ".join(tool_names) or "<empty>")
+
+    if "create_company_profile" not in tool_names:
+        raise RuntimeError(
+            "Инструмент create_company_profile не загружен из MCP. "
+            "Проверьте DB_MCP_URL, доступность db-mcp и его конфигурацию."
+        )
+
+    # Системный промпт задается статически через base_prompt
+    system_prompt = BASE_SYSTEM_PROMPT
+
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", "{system_prompt}"),
+            MessagesPlaceholder(variable_name="chat_history"),
+            ("human", "{input}"),
+            MessagesPlaceholder(variable_name="agent_scratchpad"),
+        ]
+    ).partial(
+        system_prompt=system_prompt
+    )
+
+    agent = create_tool_calling_agent(llm, mcp_tools, prompt)
+
+    agent_executor = AgentExecutor(
+        agent=agent,
+        tools=mcp_tools,
+        verbose=True,
+        handle_parsing_errors=True,
+        max_iterations=20,
+        return_intermediate_steps=True,
+    )
+
+    return agent_executor
+
+
+###################################
+# FILE: src/agent_task_manager.py #
+###################################
+
+# agent_task_manager.py
+
+import logging
+from a2a.server.agent_execution import AgentExecutor, RequestContext
+from a2a.server.events import EventQueue
+from a2a.server.tasks import TaskUpdater
+from a2a.types import (
+    Task,
+    TaskState,
+    UnsupportedOperationError,
+)
+from a2a.utils import (
+    new_agent_text_message,
+    new_task,
+)
+from a2a.utils.errors import ServerError
+from a2a_wrapper import LangChainA2AWrapper
+
+logger = logging.getLogger(__name__)
+
+
+class LangChainAgentExecutor(AgentExecutor):
+    """AgentExecutor для LangChain агента."""
+
+    def __init__(self, agent_wrapper: LangChainA2AWrapper):
+        self.agent = agent_wrapper
+
+    async def execute(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+    ) -> None:
+        query = context.get_user_input()
+        task = context.current_task
+
+        # 1️⃣ Пытаемся взять session_id из metadata, которое прислал клиент
+        session_id: str | None = None
+        try:
+            metadata = getattr(context, "metadata", None) or {}
+            if isinstance(metadata, dict):
+                session_id = metadata.get("session_id")
+        except Exception:
+            session_id = None
+
+        # 2️⃣ Если клиент не прислал session_id — fallback (но лучше всё-таки присылать)
+        if not session_id:
+            session_id = (
+                getattr(context, "context_id", None)
+                or (getattr(task, "context_id", None) if task else None)
+                or (getattr(task, "id", None) if task else None)
+                or "default"
+            )
+
+        logger.info(
+            "LC-A2A execute: session_id=%s, context_id=%s, task_id=%s",
+            session_id,
+            getattr(context, "context_id", None),
+            getattr(task, "id", None) if task else None,
+        )
+
+        # 3️⃣ Создаём задачу, если её ещё нет (для A2A протокола)
+        if not task:
+            task = new_task(context.message)
+            await event_queue.enqueue_event(task)
+
+        updater = TaskUpdater(event_queue, task.id, task.context_id)
+
+        # 4️⃣ Критично: передаём ВОТ ЭТОТ session_id в A2A wrapper
+        async for item in self.agent.stream(query, session_id):
+            is_task_complete = item["is_task_complete"]
+            require_user_input = item["require_user_input"]
+            is_error = item["is_error"]
+            is_event = item["is_event"]
+
+            if is_error:
+                await updater.update_status(
+                    TaskState.failed,
+                    new_agent_text_message(
+                        item["content"], task.context_id, task.id
+                    ),
+                )
+                break
+
+            if is_event:
+                await updater.update_status(
+                    TaskState.working,
+                    new_agent_text_message(
+                        item["content"], task.context_id, task.id
+                    ),
+                )
+                continue
+
+            if not is_task_complete and not require_user_input:
+                await updater.update_status(
+                    TaskState.working,
+                    new_agent_text_message(
+                        item["content"], task.context_id, task.id
+                    ),
+                )
+                continue
+
+            if not is_task_complete and require_user_input:
+                await updater.update_status(
+                    TaskState.input_required,
+                    new_agent_text_message(
+                        item["content"], task.context_id, task.id
+                    ),
+                )
+                break
+
+            if is_task_complete and not require_user_input:
+                await updater.update_status(
+                    TaskState.completed,
+                    new_agent_text_message(
+                        item["content"], task.context_id, task.id
+                    ),
+                )
+                break
+
+    async def cancel(
+        self, request: RequestContext, event_queue: EventQueue
+    ) -> Task | None:
+        raise ServerError(error=UnsupportedOperationError())
+
+
+############################
+# FILE: src/base_prompt.py #
+############################
+
+BASE_SYSTEM_PROMPT = """
+You are the "CompanyProfiler" agent for the AI Agents platform.
+
+Your task in a single dialog is to construct and save exactly one company profile, using only information provided by the current user and the available tools.
+
+--------------------------------
+1. Data model (exactly 4 fields)
+
+You work with a profile object that has exactly these fields:
+
+- name: string  
+  The official or commonly used company name.
+
+- description: string  
+  A short but meaningful Russian description of what the company does.  
+  Include in this text all important extra facts the user mentions (formats of work, remote work, key services, etc.).
+
+- regions_codes: list of objects  
+  Each element:
+  {
+    "code": "<region_code>",
+    "title": "<region_name>"
+  }
+
+- okpd2_codes: list of objects  
+  Each element:
+  {
+    "code": "<okpd2_code>",
+    "title": "<okpd2_title>"
+  }
+
+You MUST NOT:
+- invent any facts that the user did not clearly provide;
+- reuse data from examples, previous dialogs, documentation or other companies.
+
+One dialog = one company profile.
+
+--------------------------------
+2. Language
+
+- All messages to the user MUST be in Russian natural language.
+- Company names may stay in their original language, but all explanatory text MUST be Russian.
+
+--------------------------------
+3. Collecting basic facts
+
+During the dialog you MUST obtain from the user:
+
+1) The company name.  
+2) A short but meaningful description of what the company does.  
+3) Where the company is ready to work (specific regions/cities or "everywhere"/"remotely").
+
+If any of these three items is missing, unclear or contradictory, you MUST ask a direct clarifying question in Russian.
+
+Do NOT call classification or save tools until all three items are understood.
+
+--------------------------------
+4. Regions (get_regions_codes and the empty-list rule)
+
+After the user describes geography:
+
+1) If the user clearly says they work everywhere, across the whole country, or only remotely and does not want to list regions:
+   - Set regions_codes to an empty list [].
+   - Mention this fact (work everywhere / remote) in the description text.
+   - Do NOT call get_regions_codes for geography.
+
+2) If the user names specific regions or cities:
+   - Call the tool get_regions_codes to obtain a reference table or mapping.
+   - Map the user-provided locations to a list of objects:
+     {
+       "code": "<region_code>",
+       "title": "<region_name>"
+     }
+   - If mapping is ambiguous, ask the user to clarify instead of guessing.
+
+You MUST NOT add regions that the user did not mention.
+
+--------------------------------
+5. OKPD2 classification (get_okpd2_codes)
+
+ONLY AFTER all three basic items are obtained (name, description, geography):
+
+- Call the tool get_okpd2_codes with a Russian description of the company’s activity.
+- Select between 1 and 5 relevant company activities and save their OKPD2 codes.
+- Each item in okpd2_codes MUST be taken from the tool output and have the form:
+  {
+    "code": "<okpd2_code>",
+    "title": "<okpd2_title>"
+  }
+
+Do NOT invent OKPD2 codes that are not returned by get_okpd2_codes.  
+
+--------------------------------
+6. Draft profile and user approval
+
+When you have:
+
+- non-empty name,  
+- a meaningful description,  
+- correctly set regions_codes (empty list or mapped regions),  
+- at least one OKPD2 code,
+
+you MUST show the user a clear Russian draft profile, for example:
+
+- Название: ...
+- Описание: ...
+- Регионы: ...
+- ОКПД2: ...
+
+Then explicitly ask in Russian if everything is correct or what needs to be changed.
+
+Treat the following as explicit approval of the current draft (non-exhaustive list):
+- "да"
+- "да, всё верно"
+- "подтверждаю"
+- "всё ок"
+- "сохраняй"
+- "газ" (always treat "газ" as a strong "yes, do it")
+
+If the user says the draft is wrong or incomplete, you MUST:
+- ask what exactly should be changed,
+- update the profile fields accordingly,
+- show the updated draft again and ask for confirmation.
+
+Until the profile is saved, you MUST assume that the user may want to answer or correct the draft after each of your messages.
+
+--------------------------------
+7. Saving the profile (create_company_profile)
+
+You MAY call create_company_profile ONLY when ALL of the following are true:
+
+1) name is non-empty.  
+2) description is non-empty and matches the user’s description.  
+3) regions_codes is:
+   - either an empty list [] by the "works everywhere / remote" rule, or
+   - a correct list of region objects derived from user-provided geography.
+4) okpd2_codes contains between 1 and 5 elements.  
+5) The user has explicitly approved the latest draft (see section 6).
+
+When these conditions are satisfied and the user gives a positive answer (including "газ"):
+
+- Do NOT ask any more clarifying questions.
+- Call create_company_profile with an object of the form:
+  {
+    "name": "<name>",
+    "description": "<description>",
+    "regions_codes": [...],
+    "okpd2_codes": [...]
+  }
+- From the tool response, take the created company identifier (company_id).
+
+--------------------------------
+8. Final JSON response
+
+Immediately after a successful create_company_profile call, you MUST send a single final message to the user in the form of a strict JSON object, with:
+
+- NO extra text before or after the JSON,
+- NO Markdown.
+
+The JSON structure MUST be exactly:
+
+{
+  "company_name": "<exact company name that was saved>",
+  "company_id": "<ID returned by create_company_profile>"
+}
+
+This JSON is the LAST message in the dialog about this profile.  
+After sending it, you MUST NOT send any further messages until the user starts a new dialog.
+"""
+
+
+#######################
+# FILE: src/config.py #
+#######################
+
+import os
+import logging
+from typing import Optional
+
+from dotenv import load_dotenv, find_dotenv
+from pydantic import Field, ValidationError
+from pydantic_settings import BaseSettings
+
+# Загрузить .env один раз
+load_dotenv(find_dotenv())
+
+
+# ------------------------------------------------------------------------------
+# Логирование
+# ------------------------------------------------------------------------------
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+logger = logging.getLogger("agent-profiler")
+
+
+# ------------------------------------------------------------------------------
+# Продакшн-класс настроек
+# ------------------------------------------------------------------------------
+class Settings(BaseSettings):
+
+    # ---- LLM ----
+    llm_model: str = Field(..., alias="LLM_MODEL")
+    llm_api_key: str = Field(..., alias="LLM_API_KEY")
+    llm_api_base: str = Field(..., alias="LLM_API_BASE")
+
+    # ---- MCP ----
+    db_mcp_url: str = Field(..., alias="DB_MCP_URL")
+    codes_mcp_url: str = Field(..., alias="CODES_MCP_URL")
+
+    # ---- Agent metadata ----
+    agent_name: str = Field("CompanyProfiler", alias="AGENT_NAME")
+    agent_desc: str = Field(
+        "LangChain Agent для формирования профиля компаний",
+        alias="AGENT_DESCRIPTION"
+    )
+    agent_host: str = Field("0.0.0.0", alias="AGENT_HOST")
+    agent_port: int = Field(8001, alias="AGENT_PORT")
+    agent_url: Optional[str] = Field(None, alias="AGENT_URL")
+
+    agent_version: str = Field("v1.0.0", alias="AGENT_VERSION")
+
+    class Config:
+        populate_by_name = True
+        extra = "ignore"
+
+    # --------------------------------------------------------------------------
+    # Единый post-validator
+    # --------------------------------------------------------------------------
+    def model_post_init(self, __context):
+        # ----------------------------------------------------------
+        # AGENT_URL → вычисляем, если не указан
+        # ----------------------------------------------------------
+        if not self.agent_url:
+            self.agent_url = f"http://{self.agent_host}:{self.agent_port}"
+            logger.debug(f"agent_url was empty → set to {self.agent_url}")
+
+
+# ------------------------------------------------------------------------------
+# Фабрика
+# ------------------------------------------------------------------------------
+_settings_cache: Optional[Settings] = None
+
+
+def get_settings() -> Settings:
+    """Singleton-кеш, чтобы не пересоздавать настройки 100 раз"""
+    global _settings_cache
+    
+    if _settings_cache is None:
+        try:
+            _settings_cache = Settings()
+            
+        except ValidationError as e:
+            logger.error("❌ Invalid configuration:")
+            logger.error(e)
+            raise
+        
+    return _settings_cache
+
+
+##########################
+# FILE: src/start_a2a.py #
+##########################
+
+"""Точка входа для запуска LangChain агента через A2A протокол."""
+from config import get_settings, logger
+settings = get_settings()
+
+from a2a.server.apps import A2AStarletteApplication
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.tasks import InMemoryTaskStore
+from a2a.types import (
+    AgentCapabilities,
+    AgentCard,
+)
+
+from agent import create_langchain_agent
+from a2a_wrapper import LangChainA2AWrapper
+from agent_task_manager import LangChainAgentExecutor
+
+def main():
+    """Основная функция запуска сервера."""
+    try:
+        # Создаем LangChain агента
+        agent_executor = create_langchain_agent([settings.db_mcp_url, settings.codes_mcp_url])
+        
+        # Создаем A2A обертку
+        agent_wrapper = LangChainA2AWrapper(agent_executor)
+        
+        # Создаем A2A executor
+        agent_executor_a2a = LangChainAgentExecutor(agent_wrapper)
+        
+        # Настройка AgentCard
+        capabilities = AgentCapabilities(streaming=True)
+        agent_card = AgentCard(
+            name=settings.agent_name,
+            description=settings.agent_desc,
+            url=settings.agent_url,
+            version=settings.agent_version,
+            default_input_modes=agent_wrapper.SUPPORTED_CONTENT_TYPES,
+            default_output_modes=agent_wrapper.SUPPORTED_CONTENT_TYPES,
+            capabilities=capabilities,
+            skills=[],
+        )
+        
+        # Создаем request handler
+        request_handler = DefaultRequestHandler(
+            agent_executor=agent_executor_a2a,
+            task_store=InMemoryTaskStore(),
+        )
+        
+        # Создаем и запускаем сервер
+        server = A2AStarletteApplication(
+            agent_card=agent_card,
+            http_handler=request_handler
+        )
+        
+        import uvicorn
+        logger.info(f"Starting LangChain Agent server on port {settings.agent_port}")
+        uvicorn.run(server.build(), host=settings.agent_host, port=settings.agent_port)
+        
+    except Exception as e:
+        logger.error(f'An error occurred during server startup: {e}', exc_info=True)
+        exit(1)
+
+
+if __name__ == '__main__':
+    main()
+

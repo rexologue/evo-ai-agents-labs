@@ -16,8 +16,8 @@ LangChain агент «CompanyProfiler» для формирования про�
 
 ## 🚀 Запуск
 ```bash
-docker buildx build --platform linux/amd64 -t agent-profiler -f Dockerfile ..
-docker run --rm --network host --env-file .env agent-profiler
+docker buildx build --platform linux/amd64 -t agent-purchaser -f Dockerfile ..
+docker run --rm --network host --env-file .env agent-purchaser
 ```
 
 Сервер будет доступен по `AGENT_URL` (по умолчанию `http://0.0.0.0:8001`).

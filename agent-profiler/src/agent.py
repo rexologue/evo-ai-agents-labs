@@ -1,31 +1,46 @@
-"""Определение LangChain агента с поддержкой MCP инструментов и классификацией по ОКПД2."""
+"""Определение LangChain агента с поддержкой MCP инструментов.
+
+Фикс:
+- Если один из MCP серверов недоступен/не резолвится (DNS), MultiServerMCPClient.get_tools()
+  падает ExceptionGroup и валит запуск всего агента.
+- Здесь мы грузим тулзы ПО ОДНОМУ серверу, собираем ошибки, и выдаём понятное сообщение:
+  какой URL упал и почему.
+
+Важно: это НЕ про LLM. Ошибка происходит ещё до старта агента, на этапе list_tools().
+"""
 
 from __future__ import annotations
 
 import asyncio
+import socket
 import sys
 import types
-from typing import List, Optional, Dict
+from urllib.parse import urlparse
+from typing import Dict, List, Optional, Tuple, Any
 
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import BaseTool
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 
-# ВАЖНО: классический AgentExecutor и tool-calling агент
+# В вашем проекте используется классический tool-calling агент
 from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
+
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+from config import get_settings, logger
+from base_prompt import BASE_SYSTEM_PROMPT
+
+settings = get_settings()
 
 
 def _ensure_langchain_content_module() -> None:
-    """Ensure langchain-mcp-adapters can import ``langchain_core.messages.content``."""
-
+    """Ensure langchain-mcp-adapters can import `langchain_core.messages.content`."""
     if "langchain_core.messages.content" in sys.modules:
         return
-
     try:
         from langchain_core.messages import content_blocks
     except Exception:
         return
-
     shim = types.ModuleType("langchain_core.messages.content")
     shim.__dict__.update(content_blocks.__dict__)
     sys.modules["langchain_core.messages.content"] = shim
@@ -34,125 +49,148 @@ def _ensure_langchain_content_module() -> None:
 _ensure_langchain_content_module()
 
 
-from langchain_mcp_adapters.client import MultiServerMCPClient  # MCP <-> LangChain
-
-from config import get_settings, logger
-from base_prompt import BASE_SYSTEM_PROMPT
-
-settings = get_settings()
-
-
 def _normalize_mcp_url(raw: str) -> str:
-    """Нормализует URL MCP сервера к виду .../mcp."""
     raw = (raw or "").strip()
     if not raw:
         raise ValueError("Пустой MCP URL")
-
-    # уже /mcp или /mcp/
     if raw.rstrip("/").endswith("/mcp"):
         return raw.rstrip("/")
-
     return raw.rstrip("/") + "/mcp"
 
 
-def _build_mcp_client(mcp_urls: Optional[str]) -> Optional[MultiServerMCPClient]:
-    """
-    Создаёт MultiServerMCPClient по строке с MCP URL-ами.
+def _dns_sanity_check(url: str) -> None:
+    """Ранняя диагностика: если хост не резолвится — упадём с понятной ошибкой."""
+    p = urlparse(url)
+    host = p.hostname
+    if not host:
+        raise ValueError(f"Некорректный MCP URL (не удалось извлечь hostname): {url}")
 
-    Поддерживаем форматы:
-      - "http://db-mcp:28001/mcp"
-      - "http://db-mcp:28001"
-      - "finance=http://db-mcp:28001/mcp"
-      - "finance=http://db-mcp:28001,gosplan=http://gosplan-mcp:28002/mcp"
-    """
-    if not mcp_urls:
-        return None
+    # port по умолчанию
+    if p.port:
+        port = p.port
+    else:
+        port = 443 if p.scheme == "https" else 80
 
-    servers: Dict[str, dict] = {}
+    try:
+        socket.getaddrinfo(host, port)
+    except socket.gaierror as e:
+        raise RuntimeError(
+            "MCP hostname не резолвится из контейнера агента.\n"
+            f"URL: {url}\n"
+            f"Host: {host}:{port}\n"
+            f"Причина: {e}\n\n"
+            "Типовые причины:\n"
+            "- Вы указали docker-compose service name (например, db-mcp), но агент НЕ в той же docker-сети.\n"
+            "- Вы используете --network host, но оставили service name вместо localhost/127.0.0.1.\n"
+            "- В Cloud/remote среде указали внутренний hostname, который не существует снаружи.\n"
+        ) from e
 
-    for idx, item in enumerate(mcp_urls.split(",")):
-        item = item.strip()
-        if not item:
-            continue
 
-        if "=" in item:
-            name, url = item.split("=", 1)
-            name = name.strip() or f"mcp_{idx}"
-            url = url.strip()
-        else:
-            name = f"mcp_{idx}"
-            url = item.strip()
+def _flatten_exc(exc: BaseException) -> List[str]:
+    """Собрать сообщения из ExceptionGroup (Python 3.11+)."""
+    # ExceptionGroup / BaseExceptionGroup существуют в 3.11+
+    if isinstance(exc, BaseExceptionGroup):  # type: ignore[name-defined]
+        out: List[str] = []
+        for sub in exc.exceptions:  # type: ignore[attr-defined]
+            out.extend(_flatten_exc(sub))
+        return out
+    return [f"{type(exc).__name__}: {exc}"]
 
-        if not url:
-            continue
 
-        url = _normalize_mcp_url(url)
+async def _load_tools_from_one_mcp(url: str, server_name: str) -> List[BaseTool]:
+    """Грузим tools с одного MCP сервера. Если сервер недоступен — тут и упадём."""
+    url = _normalize_mcp_url(url)
+    _dns_sanity_check(url)
 
-        servers[name] = {
-            "transport": "streamable_http",  # streamable HTTP поверх FastMCP
-            "url": url,
+    client = MultiServerMCPClient(
+        {
+            server_name: {
+                "transport": "streamable_http",
+                "url": url,
+            }
         }
-
-    if not servers:
-        return None
-
-    return MultiServerMCPClient(servers)
-
-
-async def _get_mcp_tools_async(mcp_urls: Optional[str]) -> List[BaseTool]:
-    """Асинхронная загрузка всех тулов со всех MCP-серверов."""
-    client = _build_mcp_client(mcp_urls)
-    if client is None:
-        return []
-
+    )
     tools = await client.get_tools()
     return list(tools)
 
 
-def get_mcp_tools(mcp_urls: Optional[str]) -> List[BaseTool]:
-    """Синхронная обёртка над асинхронной загрузкой MCP-тулов."""
-    if not mcp_urls:
-        return []
-    return asyncio.run(_get_mcp_tools_async(mcp_urls))
+async def _load_tools_from_many(urls: List[str]) -> Tuple[List[BaseTool], List[str]]:
+    """Загружает тулзы с нескольких MCP URL, не валя всё из-за одного."""
+    tasks: List[asyncio.Task[Any]] = []
+    for i, u in enumerate(urls):
+        u = (u or "").strip()
+        if not u:
+            continue
+        tasks.append(asyncio.create_task(_load_tools_from_one_mcp(u, f"mcp_{i}")))
+
+    if not tasks:
+        return [], ["Не переданы MCP URL (пусто)."]
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    tools: List[BaseTool] = []
+    errors: List[str] = []
+
+    for u, r in zip([x for x in urls if (x or "").strip()], results):
+        if isinstance(r, BaseException):
+            msgs = _flatten_exc(r)
+            errors.append(f"Не удалось подключиться к MCP: {u}\n- " + "\n- ".join(msgs))
+        else:
+            tools.extend(list(r))
+
+    return tools, errors
 
 
-def create_langchain_agent(
-    mcp_urls: str | list[str] | None = None
-) -> AgentExecutor:
-    """Создает LangChain агента с MCP инструментами"""
+def create_langchain_agent(mcp_urls: Optional[List[str]] = None) -> AgentExecutor:
+    """Создаёт LangChain tool-calling агента + MCP инструменты."""
     logger.info("LLM: model=%s base_url=%s", settings.llm_model, settings.llm_api_base)
-    
-    settings.llm_model = settings.llm_model.replace("hosted_vllm/", "")
-    
-    # LLM
+
+    # иногда у вас префикс hosted_vllm/
+    model_name = (settings.llm_model or "").replace("hosted_vllm/", "").strip()
+
     llm = ChatOpenAI(
-        model=settings.llm_model,
+        model=model_name,
         base_url=settings.llm_api_base,
         api_key=settings.llm_api_key,
         temperature=0.1,
     )
 
-    # Инструменты MCP (db-mcp и др.)
-    mcp_tools = []
+    urls: List[str] = []
+    if mcp_urls:
+        urls = [u for u in mcp_urls if (u or "").strip()]
 
-    if isinstance(mcp_urls, list):
-        for url in mcp_urls:
-            mcp_tools.extend(get_mcp_tools(url))
-    elif isinstance(mcp_urls, str):
-        mcp_tools.extend(get_mcp_tools(mcp_urls))
+    # Грузим MCP tools (не валим весь процесс из-за одного URL без объяснения)
+    try:
+        mcp_tools, mcp_errors = asyncio.run(_load_tools_from_many(urls))
+    except RuntimeError as e:
+        # это наши понятные ошибки (DNS etc.)
+        raise
+    except BaseException as e:
+        # на всякий случай — тоже внятно
+        msgs = _flatten_exc(e)
+        raise RuntimeError("Ошибка при загрузке MCP инструментов:\n- " + "\n- ".join(msgs)) from e
 
-    tool_names = [getattr(tool, "name", "") for tool in mcp_tools]
-    logger.info("MCP tools loaded: %s", ", ".join(tool_names) or "<empty>")
+    tool_names = [getattr(t, "name", "") for t in mcp_tools]
+    logger.info("MCP tools loaded: %s", ", ".join([n for n in tool_names if n]) or "<empty>")
 
-    if "create_company_profile" not in tool_names:
-        raise RuntimeError(
-            "Инструмент create_company_profile не загружен из MCP. "
-            "Проверьте DB_MCP_URL, доступность db-mcp и его конфигурацию."
+    if mcp_errors:
+        logger.error("MCP load errors:\n%s", "\n\n".join(mcp_errors))
+
+    # Если обязательные тулзы не загружены — не стартуем (иначе модель начнёт фантазировать).
+    required = {"create_company_profile", "get_regions_codes", "get_okpd2_codes"}
+    missing = sorted([r for r in required if r not in set(tool_names)])
+    if missing:
+        msg = (
+            "Не загружены обязательные MCP инструменты: " + ", ".join(missing) + ".\n"
+            "См. ошибки подключения выше (скорее всего один из MCP URL недоступен/не резолвится).\n"
+            "Проверьте DB_MCP_URL / CODES_MCP_URL в окружении агента."
         )
+        if mcp_errors:
+            msg += "\n\nОшибки MCP:\n" + "\n\n".join(mcp_errors)
+        raise RuntimeError(msg)
 
-    # Системный промпт задается статически через base_prompt
+    # Prompt (как раньше)
     system_prompt = BASE_SYSTEM_PROMPT
-
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", "{system_prompt}"),
@@ -160,9 +198,7 @@ def create_langchain_agent(
             ("human", "{input}"),
             MessagesPlaceholder(variable_name="agent_scratchpad"),
         ]
-    ).partial(
-        system_prompt=system_prompt
-    )
+    ).partial(system_prompt=system_prompt)
 
     agent = create_tool_calling_agent(llm, mcp_tools, prompt)
 
