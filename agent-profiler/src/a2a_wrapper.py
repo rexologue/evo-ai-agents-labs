@@ -25,17 +25,14 @@ def _strip_think_blocks(text: str) -> str:
 
 
 def _was_create_company_profile_called(intermediate_steps: Any) -> bool:
-    """Проверяет по intermediate_steps, вызывался ли тул create_company_profile.
-
-    Ожидаем формат intermediate_steps от LangChain AgentExecutor:
-    список кортежей (AgentAction, Any).
+    """Проверяет по intermediate_steps, вызывался ли тул create_company_profile
+    с НОРМАЛЬНЫМИ аргументами (а не просто с пустым {}).
     """
     if not intermediate_steps:
         return False
 
     try:
         for step in intermediate_steps:
-            # Обычно это (AgentAction, tool_output)
             if not isinstance(step, (list, tuple)) or not step:
                 continue
 
@@ -43,16 +40,23 @@ def _was_create_company_profile_called(intermediate_steps: Any) -> bool:
             tool_name: Optional[str] = getattr(action, "tool", None) or getattr(
                 action, "name", None
             )
-            if not tool_name:
+            if not tool_name or "create_company_profile" not in str(tool_name):
                 continue
 
-            if "create_company_profile" in str(tool_name):
-                logger.info("Detected create_company_profile tool call in intermediate_steps")
+            tool_input = getattr(action, "tool_input", None)
+
+            # Нам важно, что там действительно есть profile
+            if isinstance(tool_input, dict) and tool_input.get("profile"):
+                logger.info(
+                    "Detected create_company_profile call with profile in intermediate_steps"
+                )
                 return True
+
     except Exception as exc:
         logger.warning("Failed to inspect intermediate_steps: %s", exc)
 
     return False
+
 
 
 class LangChainA2AWrapper:
