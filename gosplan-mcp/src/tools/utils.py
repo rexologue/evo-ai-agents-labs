@@ -193,14 +193,16 @@ def format_api_error(api_error: str, code: int) -> str:
 
 
 def classify_urls(
-    card_urls: Iterable[str] | None,
-    etp_url: str | None = None,
+    card_urls: Iterable[Any] | None,
+    etp_url: Any | None = None,
 ) -> dict[str, Any]:
     """
     Классифицирует ссылки для LLM/JSONL, чтобы НЕ приходилось «догадываться».
     Предпочтение для EIS: страницы notice/common-info, затем любые zakupki.gov.ru.
     """
-    urls = _uniq_preserve_order([u for u in (card_urls or []) if u])
+    urls = _uniq_preserve_order([str(u) for u in (card_urls or []) if u])
+
+    etp_url_str = str(etp_url) if etp_url else None
 
     eis: str | None = None
     gosplan: str | None = None
@@ -222,13 +224,13 @@ def classify_urls(
 
     other = [u for u in urls if u not in {eis, gosplan}]
     # etp отдельно (и не дублируем)
-    if etp_url and etp_url in other:
-        other = [u for u in other if u != etp_url]
+    if etp_url_str and etp_url_str in other:
+        other = [u for u in other if u != etp_url_str]
 
     return {
         "eis": eis,
         "gosplan": gosplan,
-        "etp": etp_url or None,
+        "etp": etp_url_str,
         "other": other,
     }
 
