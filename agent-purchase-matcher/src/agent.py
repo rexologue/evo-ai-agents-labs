@@ -97,7 +97,17 @@ class PurchaseMatcherAgent:
             HumanMessage(content=message),
         ]
         resp = await self.llm.ainvoke(msgs)
-        data = _safe_parse_json(resp.content if hasattr(resp, "content") else str(resp))
+        resp_content = resp.content if hasattr(resp, "content") else str(resp)
+        logger.info("Intent LLM raw response: %s", resp_content)
+        data = _safe_parse_json(resp_content)
+        if not data:
+            logger.warning("Intent JSON parsing failed for message='%s'", message)
+        if not data.get("company_id"):
+            logger.info(
+                "Intent parsed without company_id. message='%s', company_name='%s'",
+                message,
+                data.get("company_name"),
+            )
         logger.info("Parsed intent: %s", data)
         return data
 
