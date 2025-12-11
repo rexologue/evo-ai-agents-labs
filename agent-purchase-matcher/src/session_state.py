@@ -10,6 +10,7 @@ class PurchaseMatcherState:
     company_profile: Optional[Dict[str, Any]] = None
     company_id: Optional[str] = None
     company_name: Optional[str] = None
+    greeted: bool = False
     user_query: Optional[str] = None
     applications_end_before: Optional[str] = None
     regions_override: Optional[List[str]] = None
@@ -24,6 +25,7 @@ class PurchaseMatcherState:
         self.company_profile = None
         self.company_id = None
         self.company_name = None
+        self.greeted = False
         self.user_query = None
         self.applications_end_before = None
         self.regions_override = None

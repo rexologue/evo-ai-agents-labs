@@ -102,6 +102,9 @@ class PurchaseMatcherAgent:
         data = _safe_parse_json(resp_content)
         if not data:
             logger.warning("Intent JSON parsing failed for message='%s'", message)
+            data = {}
+        if not data.get("law_preference"):
+            data["law_preference"] = "не указано"
         if not data.get("company_id"):
             logger.info(
                 "Intent parsed without company_id. message='%s', company_name='%s'",
@@ -110,6 +113,52 @@ class PurchaseMatcherAgent:
             )
         logger.info("Parsed intent: %s", data)
         return data
+
+    def _build_missing_info_prompt(self, state: PurchaseMatcherState) -> str:
+        lines: List[str] = []
+
+        if not state.greeted:
+            lines.append(
+                "Привет! Чтобы подобрать закупки под вашу компанию, мне нужно несколько деталей."
+            )
+        else:
+            lines.append("Продолжаем. Мне всё ещё нужна информация, чтобы начать поиск.")
+
+        questions: List[str] = []
+        if not state.company_profile and not (state.company_id or state.company_name):
+            questions.append(
+                "Пришлите id компании из базы или точное название, чтобы я нашла профиль."
+            )
+        if not state.user_query:
+            questions.append(
+                "Что ищем: опишите вид закупок или услуг, ключевые требования или ключевые слова."
+            )
+        if not state.applications_end_before:
+            questions.append(
+                "До какого числа принимают заявки? Укажите дату в формате YYYY-MM-DD."
+            )
+
+        optional: List[str] = []
+        if state.regions_override is None:
+            optional.append(
+                "нужны ли конкретные регионы/города или ищем по всем доступным"
+            )
+        if not state.law_preference:
+            optional.append("какой закон предпочтителен: 44-ФЗ, 223-ФЗ или оба")
+        if state.price_notes is None:
+            optional.append("есть ли ограничения по цене или бюджету")
+
+        if questions:
+            lines.append("\n".join(f"— {q}" for q in questions))
+        if optional:
+            lines.append(
+                "Дополнительно можно уточнить: "
+                + ", ".join(optional)
+                + "."
+            )
+
+        state.greeted = True
+        return "\n".join(lines)
 
     async def _generate_description(self, purchase_number: str, detail: Dict[str, Any]) -> Dict[str, Any]:
         payload = json.dumps(detail, ensure_ascii=False, indent=2)
@@ -257,7 +306,7 @@ class PurchaseMatcherAgent:
             except Exception:
                 logger.exception("Session %s: company profile lookup failed", session_id)
                 return {
-                    "content": "Произошла ошибка при запросе профиля компании. Попробуйте ещё раз или проверьте параметры.",
+                    "content": "Произошла ошибка при запросе профиля компании. Попробуйте ещё раз или укажите другое название/ID.",
                     "require_user_input": True,
                     "is_task_complete": False,
                     "is_error": True,
@@ -270,9 +319,10 @@ class PurchaseMatcherAgent:
                     state.company_id,
                     state.company_name,
                 )
-                self._reset_state(session_id)
+                prompt = self._build_missing_info_prompt(state)
+                state.reset()
                 return {
-                    "content": "Не нашла профиль компании. Пожалуйста, сначала создайте профиль компании в системе, затем пришлите id или точное название.",
+                    "content": prompt,
                     "require_user_input": True,
                     "is_task_complete": False,
                     "is_error": False,
@@ -287,19 +337,11 @@ class PurchaseMatcherAgent:
                 state.company_name,
             )
 
-        if not state.applications_end_before:
-            logger.debug("Session %s: missing deadline", session_id)
+        if not state.applications_end_before or not state.user_query:
+            prompt = self._build_missing_info_prompt(state)
+            logger.debug("Session %s: missing required fields, prompt issued", session_id)
             return {
-                "content": "Укажите, пожалуйста, крайний прием заявок (дата YYYY-MM-DD), чтобы отфильтровать закупки.",
-                "require_user_input": True,
-                "is_task_complete": False,
-                "is_error": False,
-            }
-
-        if not state.user_query:
-            logger.debug("Session %s: missing user query", session_id)
-            return {
-                "content": "Расскажите, какие закупки нужны (вид работ/услуг, регионы, бюджет).",
+                "content": prompt,
                 "require_user_input": True,
                 "is_task_complete": False,
                 "is_error": False,
