@@ -1,14 +1,18 @@
 """Определение LangChain агента с поддержкой MCP инструментов и классификацией по ОКПД2."""
 
+from __future__ import annotations
+
 import asyncio
 import sys
 import types
-from typing import List, Optional, Dict, Sequence
+from typing import List, Optional, Dict
 
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import BaseTool
-from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+
+# ВАЖНО: классический AgentExecutor и tool-calling агент
+from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
 
 
 def _ensure_langchain_content_module() -> None:
@@ -153,7 +157,7 @@ def create_langchain_agent(
         system_prompt=system_prompt
     )
 
-    agent = create_openai_tools_agent(llm, mcp_tools, prompt)
+    agent = create_tool_calling_agent(llm, mcp_tools, prompt)
 
     agent_executor = AgentExecutor(
         agent=agent,

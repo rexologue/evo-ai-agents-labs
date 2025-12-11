@@ -9,7 +9,6 @@ import asyncio
 import logging
 from typing import Dict, Any, AsyncGenerator, List, Optional
 
-from langchain.agents import AgentExecutor
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 logger = logging.getLogger(__name__)
@@ -66,7 +65,7 @@ class LangChainA2AWrapper:
     SUPPORTED_CONTENT_TYPES = ["text", "text/plain"]
 
     def __init__(
-        self, agent_executor: AgentExecutor, auto_reset_on_complete: bool = True
+        self, agent_executor, auto_reset_on_complete: bool = True
     ) -> None:
         self.agent_executor = agent_executor
         # история как список BaseMessage (HumanMessage / AIMessage)
