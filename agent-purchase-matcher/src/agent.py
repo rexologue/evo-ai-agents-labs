@@ -9,7 +9,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import BaseTool
 
-from config import get_settings
+from config import get_settings, logger
 from mcp_utils import load_mcp_tools
 from prompts import (
     DESCRIPTION_SYSTEM_PROMPT,
@@ -41,6 +41,10 @@ class PurchaseMatcherAgent:
         )
         # Подгружаем инструменты MCP
         self.tools = load_mcp_tools([settings.db_mcp_url, settings.gosplan_mcp_url])
+        logger.info(
+            "PurchaseMatcherAgent initialized with MCP tools: %s",
+            list(self.tools.keys()),
+        )
 
     def _get_state(self, session_id: str) -> PurchaseMatcherState:
         if session_id not in self.sessions:
@@ -71,13 +75,21 @@ class PurchaseMatcherAgent:
         tool: BaseTool | None = self.tools.get(tool_name)
         if tool is None:
             raise ValueError(f"Tool {tool_name} not available")
+        logger.debug("Calling tool '%s' with args=%s", tool_name, arguments)
         try:
             if hasattr(tool, "ainvoke"):
-                return await tool.ainvoke(arguments)
+                result = await tool.ainvoke(arguments)
+                logger.debug("Tool '%s' async result: %s", tool_name, result)
+                return result
             # fallback sync
-            return tool.invoke(arguments)
+            result = tool.invoke(arguments)
+            logger.debug("Tool '%s' sync result: %s", tool_name, result)
+            return result
         except Exception:
-            return tool.run(arguments)
+            logger.exception("Tool '%s' failed on invoke, trying run()", tool_name)
+            result = tool.run(arguments)
+            logger.debug("Tool '%s' run result after exception: %s", tool_name, result)
+            return result
 
     async def _parse_intent(self, message: str) -> Dict[str, Any]:
         msgs = [
@@ -86,6 +98,7 @@ class PurchaseMatcherAgent:
         ]
         resp = await self.llm.ainvoke(msgs)
         data = _safe_parse_json(resp.content if hasattr(resp, "content") else str(resp))
+        logger.info("Parsed intent: %s", data)
         return data
 
     async def _generate_description(self, purchase_number: str, detail: Dict[str, Any]) -> Dict[str, Any]:
@@ -181,20 +194,49 @@ class PurchaseMatcherAgent:
         state.law_preference = intent.get("law_preference") or state.law_preference
         state.price_notes = intent.get("price_notes") or state.price_notes
 
+        logger.debug(
+            "Session %s state after intent: company_id=%s, company_name=%s, user_query=%s, deadline=%s",
+            session_id,
+            state.company_id,
+            state.company_name,
+            state.user_query,
+            state.applications_end_before,
+        )
+
         if not state.company_profile:
             company = None
             try:
                 if state.company_id:
+                    logger.info(
+                        "Session %s: fetching company profile by id=%s",
+                        session_id,
+                        state.company_id,
+                    )
                     company_resp = await self._call_tool(
                         "get_company_profile", {"company_id": state.company_id}
                     )
                     company = self._extract_structured_content(company_resp)
+                    logger.info(
+                        "Session %s: company profile response (by id): %s",
+                        session_id,
+                        company,
+                    )
                 if not company and state.company_name:
+                    logger.info(
+                        "Session %s: searching company by name '%s'",
+                        session_id,
+                        state.company_name,
+                    )
                     profiles_resp = await self._call_tool(
                         "list_company_profiles",
                         {"query": state.company_name, "limit": 1, "offset": 0},
                     )
                     structured = self._extract_structured_content(profiles_resp) or {}
+                    logger.debug(
+                        "Session %s: list_company_profiles structured response: %s",
+                        session_id,
+                        structured,
+                    )
                     candidates = (
                         structured.get("items")
                         if isinstance(structured, dict)
@@ -203,6 +245,7 @@ class PurchaseMatcherAgent:
                     if isinstance(candidates, list) and candidates:
                         company = candidates[0]
             except Exception:
+                logger.exception("Session %s: company profile lookup failed", session_id)
                 return {
                     "content": "Произошла ошибка при запросе профиля компании. Попробуйте ещё раз или проверьте параметры.",
                     "require_user_input": True,
@@ -211,6 +254,12 @@ class PurchaseMatcherAgent:
                 }
 
             if not company:
+                logger.warning(
+                    "Session %s: company not found (id=%s, name=%s)",
+                    session_id,
+                    state.company_id,
+                    state.company_name,
+                )
                 self._reset_state(session_id)
                 return {
                     "content": "Не нашла профиль компании. Пожалуйста, сначала создайте профиль компании в системе, затем пришлите id или точное название.",
@@ -221,8 +270,15 @@ class PurchaseMatcherAgent:
             state.company_profile = company
             state.company_id = company.get("id") or state.company_id
             state.company_name = company.get("name") or state.company_name
+            logger.info(
+                "Session %s: resolved company profile id=%s name='%s'",
+                session_id,
+                state.company_id,
+                state.company_name,
+            )
 
         if not state.applications_end_before:
+            logger.debug("Session %s: missing deadline", session_id)
             return {
                 "content": "Укажите, пожалуйста, крайний прием заявок (дата YYYY-MM-DD), чтобы отфильтровать закупки.",
                 "require_user_input": True,
@@ -231,6 +287,7 @@ class PurchaseMatcherAgent:
             }
 
         if not state.user_query:
+            logger.debug("Session %s: missing user query", session_id)
             return {
                 "content": "Расскажите, какие закупки нужны (вид работ/услуг, регионы, бюджет).",
                 "require_user_input": True,
@@ -239,9 +296,21 @@ class PurchaseMatcherAgent:
             }
 
         okpd2_codes, regions_codes = self._extract_okpd_and_regions(state.company_profile, state)
+        logger.info(
+            "Session %s: filters okpd2=%s regions=%s deadline=%s",
+            session_id,
+            okpd2_codes,
+            regions_codes,
+            state.applications_end_before,
+        )
         try:
             deadline = datetime.fromisoformat(state.applications_end_before).date().isoformat()
         except Exception:
+            logger.warning(
+                "Session %s: invalid deadline format '%s'",
+                session_id,
+                state.applications_end_before,
+            )
             return {
                 "content": "Дата дедлайна непонятна. Пришлите в формате YYYY-MM-DD.",
                 "require_user_input": True,
@@ -259,6 +328,7 @@ class PurchaseMatcherAgent:
         try:
             search_resp = await self._call_tool("search_purchases", search_payload)
         except Exception:
+            logger.exception("Session %s: search_purchases failed", session_id)
             return {
                 "content": "Не удалось выполнить поиск по gosplan-mcp. Попробуйте позже или скорректируйте запрос.",
                 "require_user_input": True,
@@ -267,6 +337,11 @@ class PurchaseMatcherAgent:
             }
         purchase_numbers = []
         structured_search = self._extract_structured_content(search_resp)
+        logger.debug(
+            "Session %s: search_purchases structured response: %s",
+            session_id,
+            structured_search,
+        )
         if isinstance(structured_search, list):
             purchase_numbers = [
                 item.get("purchase_number")
@@ -280,6 +355,11 @@ class PurchaseMatcherAgent:
             )
 
         if not purchase_numbers:
+            logger.info(
+                "Session %s: no purchases found for payload=%s",
+                session_id,
+                search_payload,
+            )
             return {
                 "content": "По заданным фильтрам ничего не нашла. Можно попробовать позже, смягчить регионы или дедлайн?",
                 "require_user_input": True,
@@ -297,6 +377,11 @@ class PurchaseMatcherAgent:
                 )
                 detail = self._extract_structured_content(detail_resp) or {}
             except Exception:
+                logger.exception(
+                    "Session %s: failed to fetch purchase details for %s",
+                    session_id,
+                    num,
+                )
                 detail = {}
             if isinstance(detail, dict):
                 state.purchase_details[num] = detail
