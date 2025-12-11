@@ -1,6 +1,9 @@
-"""Инструмент поиска государственных закупок по 223-ФЗ."""
+"""Инструмент поиска государственных закупок по 44-ФЗ и 223-ФЗ."""
+
+from __future__ import annotations
 
 from datetime import datetime
+from typing import Iterable, List, Literal
 
 import httpx
 from fastmcp import Context
@@ -9,196 +12,158 @@ from mcp.types import TextContent
 from opentelemetry import trace
 from pydantic import Field, ValidationError
 
+from config import get_settings
 from mcp_instance import mcp
-from .models import PurchaseIndex, SearchPurchasesRequest
-from .utils import ToolResult, format_api_error, format_purchase_list
+from .models import LawLiteral, PurchaseListItem, SearchPurchasesParams
+from .utils import (
+    ToolResult,
+    create_http_client,
+    filter_and_slice_results,
+    format_api_error,
+    format_purchase_list,
+    parse_datetime,
+)
 
 tracer = trace.get_tracer(__name__)
 
 
+LAW_PATHS: dict[LawLiteral, str] = {
+    "44-FZ": "fz44",
+    "223-FZ": "fz223",
+}
+
+
+def _prepare_query(params: SearchPurchasesParams, limit: int) -> dict:
+    query: dict[str, str | int] = {"limit": limit}
+    if params.okpd2_codes:
+        query["okpd2"] = ",".join(params.okpd2_codes)
+    if params.region_codes:
+        query["region"] = ",".join(str(code) for code in params.region_codes)
+    if params.applications_end_before:
+        query["submission_close_before"] = params.applications_end_before.isoformat()
+    return query
+
+
+def _sort_purchases(items: Iterable[PurchaseListItem]) -> List[PurchaseListItem]:
+    return sorted(
+        items,
+        key=lambda item: (
+            item.submission_close_at or datetime.max,
+            item.published_at if hasattr(item, "published_at") else datetime.max,
+        ),
+    )
+
+
 @mcp.tool(
     name="search_purchases",
-    description="""🔍 Поиск государственных закупок по 223-ФЗ
-
-Ищет закупки в системе ГосПлан, по которым можно подавать заявки на участие.
-
-Параметры поиска:
-- classifier: Код ОКПД2 (например, "26.20.11.110" для компьютеров)
-- submission_close_after: Найти закупки с окончанием подачи заявок ПОСЛЕ этой даты (ISO format)
-- submission_close_before: Найти закупки с окончанием подачи заявок ДО этой даты (ISO format)
-- region: Код региона (например, 77 для Москвы)
-- limit: Количество результатов (1-100, по умолчанию 20)
-- skip: Пропустить первые N результатов (для пагинации)
-
-По умолчанию ищет закупки на этапе "подача заявок" (stage=1) в рублях (RUB).
-""",
+    description=(
+        "🔍 Поиск закупок по кодам ОКПД2, регионам и дедлайну подачи заявок."
+        " Работает по 44-ФЗ и 223-ФЗ, возвращает до 9 свежих закупок."
+    ),
 )
 async def search_purchases(
     ctx: Context,
-    classifier: str | None = Field(None, description="Код ОКПД2"),
-    submission_close_after: str | None = Field(
-        None, description="ISO datetime"
+    okpd2_codes: List[str] = Field(
+        default_factory=list, description="Список кодов ОКПД2 (можно передать несколько)."
     ),
-    submission_close_before: str | None = Field(
-        None, description="ISO datetime"
+    region_codes: List[int] = Field(
+        default_factory=list, description="Коды регионов, пусто — все регионы."
     ),
-    region: int | None = Field(None, description="Код региона (1-99)"),
-    limit: int = Field(20, ge=1, le=100),
-    skip: int = Field(0, ge=0),
+    applications_end_before: str | None = Field(
+        None,
+        description="ISO-дата/дата-время: исключить закупки с дедлайном позже указанной даты.",
+    ),
+    law: Literal["ALL", LawLiteral] = Field(
+        "ALL", description="Искать по 44-ФЗ, 223-ФЗ или по обоим сразу."
+    ),
 ) -> ToolResult:
     """Поиск государственных закупок по входным параметрам."""
 
     with tracer.start_as_current_span("search_purchases") as span:
-        span.set_attribute("classifier", classifier or "all")
-        span.set_attribute("region", region or "all")
-        span.set_attribute("limit", limit)
-        span.set_attribute("skip", skip)
-
         await ctx.info("🔍 Начинаем поиск государственных закупок")
         await ctx.report_progress(progress=0, total=100)
 
+        settings = get_settings()
         try:
-            await ctx.info(
-                f"🔧 Параметры поиска: ОКПД2={classifier or 'все'}, "
-                f"регион={region or 'все'}"
+            end_dt = parse_datetime(applications_end_before)
+            params = SearchPurchasesParams(
+                okpd2_codes=okpd2_codes,
+                region_codes=region_codes,
+                applications_end_before=end_dt,
+                law=law,
+                limit=settings.purchases_limit,
             )
+        except ValidationError as exc:
+            span.set_attribute("error", "validation_error")
+            await ctx.error(f"❌ Неверные параметры: {exc}")
+            raise McpError(
+                ErrorData(code=-32602, message=f"Неверные параметры: {exc}")
+            ) from exc
 
-            try:
-                close_after = (
-                    datetime.fromisoformat(submission_close_after)
-                    if submission_close_after
-                    else None
-                )
-                close_before = (
-                    datetime.fromisoformat(submission_close_before)
-                    if submission_close_before
-                    else None
-                )
+        await ctx.report_progress(progress=15, total=100)
 
-                request_params = SearchPurchasesRequest(
-                    classifier=classifier,
-                    submission_close_after=close_after,
-                    submission_close_before=close_before,
-                    region=region,
-                    stage=1,
-                    currency_code="RUB",
-                    limit=limit,
-                    skip=skip,
-                )
-            except ValueError as exc:
-                span.set_attribute("error", "validation_error")
-                await ctx.error(f"❌ Неверные параметры: {exc}")
-                raise McpError(
-                    ErrorData(code=-32602, message=f"Неверные параметры: {exc}")
-                ) from exc
+        laws_to_query: list[LawLiteral] = (
+            ["44-FZ", "223-FZ"] if params.law == "ALL" else [params.law]
+        )
+        collected: list[PurchaseListItem] = []
 
-            await ctx.report_progress(progress=25, total=100)
+        async with create_http_client() as client:
+            for current_law in laws_to_query:
+                if len(collected) >= params.limit:
+                    break
 
-            await ctx.info("📡 Отправляем запрос к API ГосПлан")
-            await ctx.report_progress(progress=50, total=100)
+                limit_left = params.limit - len(collected)
+                query_params = _prepare_query(params, limit_left)
+                path = f"/{LAW_PATHS[current_law]}/purchases"
 
-            query_params = {
-                k: v
-                for k, v in {
-                    "classifier": request_params.classifier,
-                    "submission_close_after": (
-                        request_params.submission_close_after.isoformat()
-                        if request_params.submission_close_after
-                        else None
-                    ),
-                    "submission_close_before": (
-                        request_params.submission_close_before.isoformat()
-                        if request_params.submission_close_before
-                        else None
-                    ),
-                    "region": request_params.region,
-                    "stage": request_params.stage,
-                    "currency_code": request_params.currency_code,
-                    "limit": request_params.limit,
-                    "skip": request_params.skip,
-                }.items()
-                if v is not None
-            }
-
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                response = await client.get(
-                    "https://v2test.gosplan.info/fz223/purchases",
-                    params=query_params,
-                )
-                response.raise_for_status()
-                purchases_data = response.json()
-
-            await ctx.report_progress(progress=75, total=100)
-
-            try:
-                purchases = [
-                    PurchaseIndex(**p) for p in purchases_data
-                ]
-            except ValidationError as exc:
-                span.set_attribute("error", "parse_error")
-                await ctx.error(f"❌ Ошибка парсинга ответа API: {exc}")
-                raise McpError(
-                    ErrorData(
-                        code=-32603,
-                        message=f"Ошибка обработки ответа API: {exc}",
+                try:
+                    response = await client.get(path, params=query_params)
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    span.set_attribute("error", "http_status_error")
+                    error_message = format_api_error(
+                        exc.response.text if exc.response else "",
+                        exc.response.status_code if exc.response else 0,
                     )
-                ) from exc
+                    await ctx.error(f"❌ HTTP ошибка: {error_message}")
+                    raise McpError(
+                        ErrorData(
+                            code=-32603,
+                            message=f"Не удалось получить список закупок.\n\n{error_message}",
+                        )
+                    ) from exc
+                except httpx.RequestError as exc:
+                    span.set_attribute("error", "request_error")
+                    await ctx.error(f"❌ Ошибка запроса: {exc}")
+                    raise McpError(
+                        ErrorData(
+                            code=-32603,
+                            message="Не удалось выполнить запрос к API",
+                        )
+                    ) from exc
 
-            formatted_text = format_purchase_list(
-                purchases=[p.model_dump() for p in purchases],
-                total=len(purchases),
-            )
+                batch = [
+                    PurchaseListItem(law=current_law, **item)
+                    for item in response.json()
+                ]
+                collected.extend(batch)
 
-            await ctx.report_progress(progress=100, total=100)
-            await ctx.info(f"✅ Найдено закупок: {len(purchases)}")
+        await ctx.report_progress(progress=70, total=100)
 
-            span.set_attribute("success", True)
-            span.set_attribute("results_count", len(purchases))
+        filtered = filter_and_slice_results(
+            _sort_purchases(collected),
+            params,
+        )
 
-            return ToolResult(
-                content=[TextContent(type="text", text=formatted_text)],
-                structured_content=[p.model_dump() for p in purchases],
-                meta={"count": len(purchases)},
-            )
+        await ctx.report_progress(progress=90, total=100)
+        formatted_text = format_purchase_list(filtered)
 
-        except httpx.HTTPStatusError as exc:
-            span.set_attribute("error", "http_status_error")
-            span.set_attribute("status_code", exc.response.status_code)
+        await ctx.report_progress(progress=100, total=100)
+        span.set_attribute("success", True)
+        span.set_attribute("results_count", len(filtered))
 
-            error_message = format_api_error(
-                exc.response.text if exc.response else "",
-                exc.response.status_code if exc.response else 0,
-            )
-
-            await ctx.error(f"❌ HTTP ошибка: {error_message}")
-
-            raise McpError(
-                ErrorData(
-                    code=-32603,
-                    message=f"Не удалось получить список закупок.\n\n{error_message}",
-                )
-            ) from exc
-
-        except httpx.TimeoutException as exc:
-            span.set_attribute("error", "timeout")
-            await ctx.error("❌ Превышено время ожидания ответа от API")
-
-            raise McpError(
-                ErrorData(
-                    code=-32603,
-                    message="Превышено время ожидания ответа от API",
-                )
-            ) from exc
-
-        except httpx.RequestError as exc:
-            span.set_attribute("error", "request_error")
-            await ctx.error(f"❌ Ошибка запроса: {exc}")
-
-            raise McpError(
-                ErrorData(code=-32603, message="Не удалось выполнить запрос к API"),
-            ) from exc
-
-        except Exception as exc:  # pragma: no cover - отладочная защита
-            span.set_attribute("error", "unexpected_error")
-            await ctx.error(f"❌ Непредвиденная ошибка: {exc}")
-            raise
+        return ToolResult(
+            content=[TextContent(type="text", text=formatted_text)],
+            structured_content=[item.model_dump() for item in filtered],
+            meta={"count": len(filtered)},
+        )
