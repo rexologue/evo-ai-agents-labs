@@ -33,6 +33,41 @@
         "max": 65535
       },
       "example": 8000
+    },
+    {
+      "name": "GOSPLAN_BASE_URL",
+      "type": "string",
+      "default": "https://v2test.gosplan.info",
+      "description": "Базовый URL для запросов к ГосПлан API",
+      "required": false,
+      "validation": {
+        "format": "uri"
+      },
+      "example": "https://v2test.gosplan.info"
+    },
+    {
+      "name": "GOSPLAN_TIMEOUT",
+      "type": "number",
+      "default": 20,
+      "description": "Таймаут HTTP-запросов к ГосПлан, секунды",
+      "required": false,
+      "validation": {
+        "min": 1,
+        "max": 120
+      },
+      "example": 20
+    },
+    {
+      "name": "GOSPLAN_PURCHASES_LIMIT",
+      "type": "integer",
+      "default": 9,
+      "description": "Ограничение на количество закупок за один вызов инструмента",
+      "required": false,
+      "validation": {
+        "min": 1,
+        "max": 50
+      },
+      "example": 9
     }
   ],
   "metadata": {
