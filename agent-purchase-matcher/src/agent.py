@@ -51,6 +51,22 @@ class PurchaseMatcherAgent:
         if session_id in self.sessions:
             self.sessions[session_id].reset()
 
+    @staticmethod
+    def _extract_structured_content(tool_response: Any) -> Any:
+        if tool_response is None:
+            return None
+
+        if hasattr(tool_response, "structured_content"):
+            return getattr(tool_response, "structured_content")
+
+        if isinstance(tool_response, dict):
+            if "structured_content" in tool_response:
+                return tool_response.get("structured_content")
+            if "data" in tool_response:
+                return tool_response.get("data")
+
+        return tool_response
+
     async def _call_tool(self, tool_name: str, arguments: dict) -> Any:
         tool: BaseTool | None = self.tools.get(tool_name)
         if tool is None:
@@ -169,13 +185,23 @@ class PurchaseMatcherAgent:
             company = None
             try:
                 if state.company_id:
-                    company = await self._call_tool(
-                        "get_company_profile_by_id", {"company_id": state.company_id}
+                    company_resp = await self._call_tool(
+                        "get_company_profile", {"company_id": state.company_id}
                     )
+                    company = self._extract_structured_content(company_resp)
                 if not company and state.company_name:
-                    company = await self._call_tool(
-                        "search_company_profile_by_name", {"name_query": state.company_name}
+                    profiles_resp = await self._call_tool(
+                        "list_company_profiles",
+                        {"query": state.company_name, "limit": 1, "offset": 0},
                     )
+                    structured = self._extract_structured_content(profiles_resp) or {}
+                    candidates = (
+                        structured.get("items")
+                        if isinstance(structured, dict)
+                        else structured
+                    )
+                    if isinstance(candidates, list) and candidates:
+                        company = candidates[0]
             except Exception:
                 return {
                     "content": "Произошла ошибка при запросе профиля компании. Попробуйте ещё раз или проверьте параметры.",
@@ -224,9 +250,9 @@ class PurchaseMatcherAgent:
             }
 
         search_payload = {
-            "okpd2_codes": okpd2_codes,
-            "regions_codes": regions_codes or [],
-            "applications_end_before": deadline,
+            "classifiers": okpd2_codes,
+            "region_codes": regions_codes or [],
+            "collecting_finished_before": deadline,
             "limit": 9,
         }
 
@@ -240,11 +266,18 @@ class PurchaseMatcherAgent:
                 "is_error": True,
             }
         purchase_numbers = []
-        if isinstance(search_resp, dict) and "data" in search_resp:
-            # Structured langchain tool response
-            purchase_numbers = search_resp.get("data", [])
-        elif isinstance(search_resp, list):
-            purchase_numbers = search_resp
+        structured_search = self._extract_structured_content(search_resp)
+        if isinstance(structured_search, list):
+            purchase_numbers = [
+                item.get("purchase_number")
+                if isinstance(item, dict)
+                else item
+                for item in structured_search
+            ]
+        elif isinstance(structured_search, dict):
+            purchase_numbers = structured_search.get("data") or structured_search.get(
+                "items", []
+            )
 
         if not purchase_numbers:
             return {
@@ -254,12 +287,15 @@ class PurchaseMatcherAgent:
                 "is_error": False,
             }
 
-        state.purchase_numbers = [str(num) for num in purchase_numbers][:9]
+        state.purchase_numbers = [str(num) for num in purchase_numbers if num][:9]
 
         # Получаем детали
         for num in state.purchase_numbers:
             try:
-                detail = await self._call_tool("get_purchase_details", {"purchase_number": num})
+                detail_resp = await self._call_tool(
+                    "get_purchase_details", {"purchase_number": num}
+                )
+                detail = self._extract_structured_content(detail_resp) or {}
             except Exception:
                 detail = {}
             if isinstance(detail, dict):
