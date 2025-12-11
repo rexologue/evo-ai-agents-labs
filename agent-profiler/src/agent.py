@@ -1,12 +1,34 @@
 """Определение LangChain агента с поддержкой MCP инструментов и классификацией по ОКПД2."""
 
 import asyncio
+import sys
+import types
 from typing import List, Optional, Dict, Sequence
 
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import BaseTool
 from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+
+
+def _ensure_langchain_content_module() -> None:
+    """Ensure langchain-mcp-adapters can import ``langchain_core.messages.content``."""
+
+    if "langchain_core.messages.content" in sys.modules:
+        return
+
+    try:
+        from langchain_core.messages import content_blocks
+    except Exception:
+        return
+
+    shim = types.ModuleType("langchain_core.messages.content")
+    shim.__dict__.update(content_blocks.__dict__)
+    sys.modules["langchain_core.messages.content"] = shim
+
+
+_ensure_langchain_content_module()
+
 
 from langchain_mcp_adapters.client import MultiServerMCPClient  # MCP <-> LangChain
 
