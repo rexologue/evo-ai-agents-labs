@@ -1,7 +1,3 @@
-######################
-# FILE: src/agent.py #
-######################
-
 """Определение LangChain агента PurchaseMatcher с поддержкой MCP инструментов (classic API)."""
 
 from __future__ import annotations
@@ -18,7 +14,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 # ВАЖНО: классический AgentExecutor и tool-calling агент
 from langchain_classic.agents import AgentExecutor, create_tool_calling_agent
 
-# Хак для langchain_mcp_adapters (как в профайлере)
+
 def _ensure_langchain_content_module() -> None:
     """Ensure langchain-mcp-adapters can import ``langchain_core.messages.content``."""
     if "langchain_core.messages.content" in sys.modules:
@@ -134,12 +130,12 @@ def create_langchain_agent(
     # защита от префикса hosted_vllm/ (как в профайлере)
     settings.llm_model = settings.llm_model.replace("hosted_vllm/", "")
 
-    # LLM
+    # LLM (температура 0.0 для детерминированности и минимизации галлюцинаций URL/цифр)
     llm = ChatOpenAI(
         model=settings.llm_model,
         base_url=settings.llm_api_base,
         api_key=settings.llm_api_key,
-        temperature=0.1,
+        temperature=0.0,
     )
 
     # Инструменты MCP (db-mcp, gosplan-mcp и др.)
@@ -156,10 +152,8 @@ def create_langchain_agent(
 
     logger.info("Loaded %d MCP tools", len(mcp_tools))
 
-    # Системный промпт (как ты его уже прописал под PurchaseMatcher)
     system_prompt = BASE_SYSTEM_PROMPT
 
-    # ВАЖНО: структура промпта под классический tool-calling агент
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", "{system_prompt}"),
@@ -169,14 +163,12 @@ def create_langchain_agent(
         ]
     ).partial(system_prompt=system_prompt)
 
-    # Классический tool-calling агент
     agent = create_tool_calling_agent(
         llm=llm,
         tools=mcp_tools,
         prompt=prompt,
     )
 
-    # Классический Executor (как раньше)
     agent_executor = AgentExecutor(
         agent=agent,
         tools=mcp_tools,

@@ -15,6 +15,7 @@ from models import LawLiteral, PurchaseFeatures
 from tools.utils import (
     ToolResult,
     build_purchase_features,
+    classify_urls,
     create_http_client,
     format_api_error,
     format_purchase_details,
@@ -28,9 +29,7 @@ LAW_PATHS: dict[LawLiteral, str] = {
 
 @mcp.tool(
     name="get_purchase_details",
-    description=(
-        "📋 Детальная информация о закупке по номеру для 44-ФЗ и 223-ФЗ"
-    ),
+    description=("📋 Детальная информация о закупке по номеру для 44-ФЗ и 223-ФЗ"),
 )
 async def get_purchase_details(
     ctx: Context,
@@ -40,7 +39,6 @@ async def get_purchase_details(
     ),
 ) -> ToolResult:
     """Возвращает подробности закупки по её номеру."""
-
     await ctx.info(f"📋 Получаем детали закупки {purchase_number}")
     await ctx.report_progress(progress=0, total=100)
 
@@ -67,11 +65,11 @@ async def get_purchase_details(
                 response = await client.get(path)
                 if response.status_code == 404:
                     continue
-                
+
                 response.raise_for_status()
                 purchase = build_purchase_features(response.json(), current_law)
                 break
-            
+
             except httpx.HTTPStatusError as exc:
                 last_error = exc
                 if exc.response is not None and exc.response.status_code == 404:
@@ -82,48 +80,52 @@ async def get_purchase_details(
                     exc.response.status_code if exc.response else 0,
                 )
                 await ctx.error(f"❌ HTTP ошибка: {error_message}")
-                
+
                 raise McpError(
                     ErrorData(
                         code=-32603,
-                        message=(
-                            "Не удалось получить детали закупки.\n\n" f"{error_message}"
-                        ),
+                        message=("Не удалось получить детали закупки.\n\n" f"{error_message}"),
                     )
                 ) from exc
-                
+
             except httpx.RequestError as exc:
                 last_error = exc
                 await ctx.error(f"❌ Ошибка запроса: {exc}")
-                
+
                 raise McpError(
-                    ErrorData(
-                        code=-32603, message="Не удалось выполнить запрос к API"
-                    ),
+                    ErrorData(code=-32603, message="Не удалось выполнить запрос к API"),
                 ) from exc
 
     if purchase is None:
         await ctx.error("❌ Закупка не найдена ни по 44-ФЗ, ни по 223-ФЗ")
-        
         raise McpError(
             ErrorData(
                 code=-32602,
-                message=(
-                    "Закупка с указанным номером не найдена в ГосПлан (44-ФЗ/223-ФЗ)."
-                ),
+                message="Закупка с указанным номером не найдена в ГосПлан (44-ФЗ/223-ФЗ).",
             )
         ) from last_error
 
     await ctx.report_progress(progress=80, total=100)
+
+    # 1) Человекочитаемый текст УЖЕ содержит явные ссылки (главная защита от галлюцинаций)
     formatted_text = format_purchase_details(purchase)
 
+    # 2) В structured_content добавляем отдельное поле urls — агент должен брать URL строго отсюда
+    urls = classify_urls(
+        purchase.card_urls,
+        purchase.platform.etp_url if purchase.platform else None,
+    )
+    structured = purchase.model_dump()
+    structured["urls"] = urls
+
     await ctx.report_progress(progress=100, total=100)
-    
+
     return ToolResult(
         content=[TextContent(type="text", text=formatted_text)],
-        structured_content=purchase.model_dump(),
+        structured_content=structured,
         meta={
             "purchase_number": purchase.purchase_number,
             "law": purchase.law,
+            "eis_url": urls.get("eis"),
         },
     )

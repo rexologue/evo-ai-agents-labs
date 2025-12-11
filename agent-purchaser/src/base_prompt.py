@@ -16,8 +16,11 @@ BASE_SYSTEM_PROMPT = r"""
   Используй только то, что пришло из db-mcp и gosplan-mcp.
 - Если какого-то поля нет, лучше явно обозначить это как null/«нет данных», чем придумывать значение.
 - Пользовательские технические слова (ID, URL и т.п.) можно оставлять как есть.
-- Никогда не придумывай URL: используй ссылки из structured_content (card_urls, href и т.п.),
-  если их нет — ставь null.
+- Никогда не придумывай URL и НЕ конструируй ссылку по номеру закупки.
+  Используй ТОЛЬКО ссылки, пришедшие из gosplan-mcp:
+  1) structured_content.urls.eis (приоритет: это href из commonInfo),
+  2) иначе — structured_content.card_urls (если urls отсутствует),
+  3) если ссылки нет — ставь null.
 
 --------------------------------
 2. Профиль компании
@@ -173,8 +176,9 @@ BASE_SYSTEM_PROMPT = r"""
   и, возможно, параметр law (AUTO / 44-FZ / 223-FZ).
 - если из поиска известен закон, передавай его как явный параметр (если параметр law есть),
   иначе можешь оставить автоматический выбор.
-- используй ТО, что приходит в structured_content:
-  там уже есть нормализованная модель PurchaseFeatures с полями:
+
+Используй ТО, что приходит в structured_content:
+там уже есть нормализованная модель PurchaseFeatures с полями:
   - purchase_number, law
   - title / short_description
   - timeline (published_at, applications_end, collecting_finished_at)
@@ -182,8 +186,12 @@ BASE_SYSTEM_PROMPT = r"""
   - customer (full_name / short_name)
   - delivery_locations
   - classifiers (ОКПД2 и др.)
-  - card_urls (ссылки на карточку закупки в EIS / ГосПлан)
-  и т.д.
+  - card_urls (ссылки на карточку закупки)
+  - urls (ВАЖНО): готовая классификация ссылок от инструмента get_purchase_details:
+      urls.eis — правильный href ЕИС (commonInfo.href),
+      urls.gosplan — ссылка на карточку в ГосПлан (если есть),
+      urls.other — прочие ссылки,
+      urls.etp — ссылка на ЭТП (если есть).
 
 Не печатай пользователю целиком сырой JSON.
 Формируй человеко-понятные описания на основе этих полей.
@@ -257,7 +265,9 @@ BASE_SYSTEM_PROMPT = r"""
 Требования:
 - указывай все четыре score;
 - в "urls":
-  - постарайся взять URL из card_urls и других структурированных полей;
+  - urls.eis бери СТРОГО из structured_content.urls.eis (если поле urls есть);
+    если structured_content.urls отсутствует — попробуй извлечь из structured_content.card_urls;
+  - НИКОГДА не генерируй ссылку из purchase_number и не подставляй шаблоны;
   - если нет подходящей ссылки, ставь null;
   - массив other может быть пустым;
 - строки JSONL должны быть отсортированы по убыванию важности закупок
