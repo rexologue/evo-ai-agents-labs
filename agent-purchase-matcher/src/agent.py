@@ -114,51 +114,40 @@ class PurchaseMatcherAgent:
         logger.info("Parsed intent: %s", data)
         return data
 
-    def _build_missing_info_prompt(self, state: PurchaseMatcherState) -> str:
+    def _build_company_prompt(self, state: PurchaseMatcherState) -> str:
         lines: List[str] = []
 
         if not state.greeted:
             lines.append(
-                "Привет! Чтобы подобрать закупки под вашу компанию, мне нужно несколько деталей."
+                "Привет! Чтобы подобрать закупки под вашу компанию, мне нужен её идентификатор или точное название."
             )
         else:
-            lines.append("Продолжаем. Мне всё ещё нужна информация, чтобы начать поиск.")
-
-        questions: List[str] = []
-        if not state.company_profile and not (state.company_id or state.company_name):
-            questions.append(
-                "Пришлите id компании из базы или точное название, чтобы я нашла профиль."
-            )
-        if not state.user_query:
-            questions.append(
-                "Что ищем: опишите вид закупок или услуг, ключевые требования или ключевые слова."
-            )
-        if not state.applications_end_before:
-            questions.append(
-                "До какого числа принимают заявки? Укажите дату в формате YYYY-MM-DD."
-            )
-
-        optional: List[str] = []
-        if state.regions_override is None:
-            optional.append(
-                "нужны ли конкретные регионы/города или ищем по всем доступным"
-            )
-        if not state.law_preference:
-            optional.append("какой закон предпочтителен: 44-ФЗ, 223-ФЗ или оба")
-        if state.price_notes is None:
-            optional.append("есть ли ограничения по цене или бюджету")
-
-        if questions:
-            lines.append("\n".join(f"— {q}" for q in questions))
-        if optional:
             lines.append(
-                "Дополнительно можно уточнить: "
-                + ", ".join(optional)
-                + "."
+                "Продолжаем. Без названия или ID компании я не смогу получить её профиль."
             )
+
+        lines.append(
+            "Пришлите id компании из базы или точное название, чтобы я нашла профиль."
+        )
 
         state.greeted = True
         return "\n".join(lines)
+
+    def _build_preferences_prompt(self, state: PurchaseMatcherState) -> str:
+        company_part = "Профиль компании найден."
+        if state.company_name or state.company_id:
+            company_part = f"Профиль компании найден: {state.company_name or ''} (id: {state.company_id or 'нет id'})."
+
+        questions = [
+            "Есть ли особые условия для поиска закупок?",
+            "— Нужна ли отсечка по приёму заявок (дата YYYY-MM-DD)?",
+            "— Ищем по всем регионам из профиля или нужны свои?",
+            "— Предпочтителен 44-ФЗ, 223-ФЗ или оба?",
+            "— Есть ли пожелания по бюджету или ключевые требования?",
+            "Если ничего не нужно уточнять — скажите, и я продолжу с текущими данными.",
+        ]
+
+        return "\n".join([company_part, *questions])
 
     async def _generate_description(self, purchase_number: str, detail: Dict[str, Any]) -> Dict[str, Any]:
         payload = json.dumps(detail, ensure_ascii=False, indent=2)
@@ -183,13 +172,13 @@ class PurchaseMatcherAgent:
         detail: Dict[str, Any],
         description: str,
         company: Dict[str, Any],
-        user_query: str,
+        query_description: str,
         applications_end_before: str,
     ) -> Dict[str, Any]:
         payload = json.dumps(
             {
                 "company": company,
-                "user_query": user_query,
+                "user_query": query_description,
                 "applications_end_before": applications_end_before,
                 "purchase_description": description,
                 "purchase": detail,
@@ -245,7 +234,11 @@ class PurchaseMatcherAgent:
 
         state.company_id = intent.get("company_id") or state.company_id
         state.company_name = intent.get("company_name") or state.company_name
-        state.user_query = intent.get("query_text") or state.user_query
+        state.query_description = (
+            intent.get("query_description")
+            or intent.get("query_text")
+            or state.query_description
+        )
         state.applications_end_before = (
             intent.get("applications_end_before") or state.applications_end_before
         )
@@ -254,11 +247,11 @@ class PurchaseMatcherAgent:
         state.price_notes = intent.get("price_notes") or state.price_notes
 
         logger.debug(
-            "Session %s state after intent: company_id=%s, company_name=%s, user_query=%s, deadline=%s",
+            "Session %s state after intent: company_id=%s, company_name=%s, query_description=%s, deadline=%s",
             session_id,
             state.company_id,
             state.company_name,
-            state.user_query,
+            state.query_description,
             state.applications_end_before,
         )
 
@@ -319,7 +312,7 @@ class PurchaseMatcherAgent:
                     state.company_id,
                     state.company_name,
                 )
-                prompt = self._build_missing_info_prompt(state)
+                prompt = self._build_company_prompt(state)
                 state.reset()
                 return {
                     "content": prompt,
@@ -337,15 +330,22 @@ class PurchaseMatcherAgent:
                 state.company_name,
             )
 
-        if not state.applications_end_before or not state.user_query:
-            prompt = self._build_missing_info_prompt(state)
-            logger.debug("Session %s: missing required fields, prompt issued", session_id)
+        if not state.preferences_prompted:
+            prompt = self._build_preferences_prompt(state)
+            state.preferences_prompted = True
             return {
                 "content": prompt,
                 "require_user_input": True,
                 "is_task_complete": False,
                 "is_error": False,
             }
+
+        query_description = (
+            state.query_description
+            or state.company_profile.get("description")
+            or state.company_name
+            or "Подобрать закупки по профилю компании"
+        )
 
         okpd2_codes, regions_codes = self._extract_okpd_and_regions(state.company_profile, state)
         logger.info(
@@ -355,27 +355,34 @@ class PurchaseMatcherAgent:
             regions_codes,
             state.applications_end_before,
         )
-        try:
-            deadline = datetime.fromisoformat(state.applications_end_before).date().isoformat()
-        except Exception:
-            logger.warning(
-                "Session %s: invalid deadline format '%s'",
-                session_id,
-                state.applications_end_before,
-            )
-            return {
-                "content": "Дата дедлайна непонятна. Пришлите в формате YYYY-MM-DD.",
-                "require_user_input": True,
-                "is_task_complete": False,
-                "is_error": False,
-            }
+        deadline = None
+        if state.applications_end_before:
+            try:
+                deadline = (
+                    datetime.fromisoformat(state.applications_end_before)
+                    .date()
+                    .isoformat()
+                )
+            except Exception:
+                logger.warning(
+                    "Session %s: invalid deadline format '%s'",
+                    session_id,
+                    state.applications_end_before,
+                )
+                return {
+                    "content": "Дата дедлайна непонятна. Пришлите в формате YYYY-MM-DD или скажите, что без ограничений.",
+                    "require_user_input": True,
+                    "is_task_complete": False,
+                    "is_error": False,
+                }
 
         search_payload = {
             "classifiers": okpd2_codes,
             "region_codes": regions_codes or [],
-            "collecting_finished_before": deadline,
             "limit": 9,
         }
+        if deadline:
+            search_payload["collecting_finished_before"] = deadline
 
         try:
             search_resp = await self._call_tool("search_purchases", search_payload)
@@ -449,8 +456,8 @@ class PurchaseMatcherAgent:
                 detail,
                 description_data.get("purchase_desc", ""),
                 state.company_profile,
-                state.user_query,
-                state.applications_end_before,
+                query_description,
+                state.applications_end_before or "",
             )
             state.purchase_scores[num] = scoring_data
             merged = {

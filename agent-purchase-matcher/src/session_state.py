@@ -11,11 +11,12 @@ class PurchaseMatcherState:
     company_id: Optional[str] = None
     company_name: Optional[str] = None
     greeted: bool = False
-    user_query: Optional[str] = None
+    query_description: Optional[str] = None
     applications_end_before: Optional[str] = None
     regions_override: Optional[List[str]] = None
     law_preference: Optional[str] = None
     price_notes: Optional[str] = None
+    preferences_prompted: bool = False
     purchase_numbers: List[str] = field(default_factory=list)
     purchase_details: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     purchase_descriptions: Dict[str, Dict[str, Any]] = field(default_factory=dict)
@@ -26,11 +27,12 @@ class PurchaseMatcherState:
         self.company_id = None
         self.company_name = None
         self.greeted = False
-        self.user_query = None
+        self.query_description = None
         self.applications_end_before = None
         self.regions_override = None
         self.law_preference = None
         self.price_notes = None
+        self.preferences_prompted = False
         self.purchase_numbers.clear()
         self.purchase_details.clear()
         self.purchase_descriptions.clear()
