@@ -2,7 +2,37 @@
 from __future__ import annotations
 
 import asyncio
+import sys
+import types
 from typing import Dict, Optional
+
+
+def _ensure_langchain_content_module() -> None:
+    """Backfill ``langchain_core.messages.content`` for older LangChain versions.
+
+    langchain-mcp-adapters 0.2.x expects ``langchain_core.messages.content`` to
+    be importable, but LangChain Core 0.3.x exposes the same symbols under
+    ``langchain_core.messages.content_blocks``.  To stay compatible without
+    upgrading the entire LangChain stack, we lazily create a shim module that
+    re-exports ``content_blocks`` under the expected name before importing the
+    adapters.
+    """
+
+    if "langchain_core.messages.content" in sys.modules:
+        return
+
+    try:
+        from langchain_core.messages import content_blocks
+    except Exception:
+        return
+
+    shim = types.ModuleType("langchain_core.messages.content")
+    shim.__dict__.update(content_blocks.__dict__)
+    sys.modules["langchain_core.messages.content"] = shim
+
+
+_ensure_langchain_content_module()
+
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.tools import BaseTool
