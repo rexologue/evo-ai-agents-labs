@@ -134,14 +134,21 @@ def create_langchain_agent(
 
     # Инструменты MCP (db-mcp и др.)
     mcp_tools = []
-    
+
     if isinstance(mcp_urls, list):
         for url in mcp_urls:
-            mcp_tools.extend(get_mcp_tools(url))   
+            mcp_tools.extend(get_mcp_tools(url))
     elif isinstance(mcp_urls, str):
         mcp_tools.extend(get_mcp_tools(mcp_urls))
-    else:
-        pass
+
+    tool_names = [getattr(tool, "name", "") for tool in mcp_tools]
+    logger.info("MCP tools loaded: %s", ", ".join(tool_names) or "<empty>")
+
+    if "create_company_profile" not in tool_names:
+        raise RuntimeError(
+            "Инструмент create_company_profile не загружен из MCP. "
+            "Проверьте DB_MCP_URL, доступность db-mcp и его конфигурацию."
+        )
 
     # Системный промпт задается статически через base_prompt
     system_prompt = BASE_SYSTEM_PROMPT
