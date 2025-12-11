@@ -67,35 +67,54 @@ LawLiteral = Literal["44-FZ", "223-FZ"]
 
 
 class SearchPurchasesParams(BaseModel):
-    """Параметры поиска закупок."""
+    """Параметры поиска закупок для ручки /purchases."""
 
-    okpd2_codes: List[str] = Field(
+    classifiers: List[str] = Field(
         default_factory=list,
-        description="Список кодов ОКПД2 для фильтрации закупок.",
+        description="Коды классификаторов (только ОКПД2 или группы).",
     )
     region_codes: List[int] = Field(
         default_factory=list,
         description="Коды регионов (если пусто, берутся все регионы).",
     )
-    applications_end_before: Optional[datetime] = Field(
+    collecting_finished_after: Optional[datetime] = Field(
         None,
-        description="Искать закупки с дедлайном подачи заявок не позднее этой даты.",
+        description="Искать закупки, где окончание подачи заявок позже указанной даты.",
     )
-    law: Literal["ALL", LawLiteral] = Field(
-        "ALL",
-        description="Выбор закона: 44-ФЗ, 223-ФЗ или оба сразу.",
+    collecting_finished_before: Optional[datetime] = Field(
+        None,
+        description="Искать закупки, где окончание подачи заявок раньше указанной даты.",
     )
-    limit: int = Field(9, ge=1, le=50, description="Максимальное количество записей.")
+    currency_code: Literal["RUB"] = Field(
+        "RUB", description="Код валюты контракта; для поискового инструмента всегда RUB."
+    )
+    sort: Literal["updated_at_desc"] = Field(
+        "updated_at_desc",
+        description="Фиксированная сортировка от новых обновлений к старым.",
+    )
+    stage: Literal[1] = Field(
+        1,
+        description="Этап закупки всегда подача заявок.",
+    )
+    limit: int = Field(9, ge=1, le=100, description="Максимальное количество записей.")
 
-    @field_validator("okpd2_codes", mode="before")
+    @field_validator("classifiers", mode="before")
     @classmethod
-    def split_codes(cls, value: Any) -> list[str]:
+    def split_comma_separated(cls, value: Any) -> list[str]:
         if value is None:
             return []
         if isinstance(value, str):
             return [code.strip() for code in value.split(",") if code.strip()]
         return list(value)
 
+    @field_validator("region_codes", mode="before")
+    @classmethod
+    def parse_region_codes(cls, value: Any) -> list[int]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [int(code.strip()) for code in value.split(",") if code.strip()]
+        return [int(code) for code in value]
 
 class PurchaseListItem(BaseModel):
     """Краткая карточка закупки из /purchases."""

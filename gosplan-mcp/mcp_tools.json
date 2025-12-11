@@ -3,10 +3,10 @@
     "name": "search_purchases",
     "description": "Поиск государственных закупок по 44-ФЗ и 223-ФЗ с фильтрами по ОКПД2, регионам и дедлайну подачи заявок.",
     "args": [
-      {"name": "okpd2_codes", "description": "Список кодов ОКПД2", "required": false},
+      {"name": "classifiers", "description": "Коды ОКПД2", "required": false},
       {"name": "region_codes", "description": "Список кодов регионов", "required": false},
-      {"name": "applications_end_before", "description": "Исключить закупки с дедлайном после этой даты (ISO)", "required": false},
-      {"name": "law", "description": "44-ФЗ, 223-ФЗ или ALL", "required": false}
+      {"name": "collecting_finished_after", "description": "ISO-строка: дедлайн после даты", "required": false},
+      {"name": "collecting_finished_before", "description": "ISO-строка: дедлайн до даты", "required": false}
     ]
   },
   {

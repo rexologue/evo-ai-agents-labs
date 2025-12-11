@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Iterable, List, Literal
+from typing import Iterable, List
 
 import httpx
 from fastmcp import Context
@@ -31,47 +31,60 @@ LAW_PATHS: dict[LawLiteral, str] = {
 
 
 def _prepare_query(params: SearchPurchasesParams, limit: int) -> dict:
-    query: dict[str, str | int] = {"limit": limit}
-    if params.okpd2_codes:
-        query["okpd2"] = ",".join(params.okpd2_codes)
+    query: dict[str, str | int | list[str] | list[int]] = {
+        "limit": limit,
+        "currency_code": params.currency_code,
+        "sort": params.sort,
+        "stage": params.stage,
+    }
+
+    if params.classifiers:
+        query["classifier"] = params.classifiers
     if params.region_codes:
-        query["region"] = ",".join(str(code) for code in params.region_codes)
-    if params.applications_end_before:
-        query["submission_close_before"] = params.applications_end_before.isoformat()
+        query["region"] = params.region_codes
+    if params.collecting_finished_after:
+        query["collecting_finished_after"] = (
+            params.collecting_finished_after.isoformat()
+        )
+    if params.collecting_finished_before:
+        query["collecting_finished_before"] = (
+            params.collecting_finished_before.isoformat()
+        )
+
     return query
 
 
 def _sort_purchases(items: Iterable[PurchaseListItem]) -> List[PurchaseListItem]:
     return sorted(
         items,
-        key=lambda item: (
-            item.submission_close_at or datetime.max,
-            item.published_at if hasattr(item, "published_at") else datetime.max,
-        ),
+        key=lambda item: item.published_at or datetime.min,
+        reverse=True,
     )
 
 
 @mcp.tool(
     name="search_purchases",
     description=(
-        "🔍 Поиск закупок по кодам ОКПД2, регионам и дедлайну подачи заявок."
-        " Работает по 44-ФЗ и 223-ФЗ, возвращает до 9 свежих закупок."
+        "🔍 Поиск закупок по ОКПД2, регионам и дедлайну подачи заявок."
+        " Работает по 44-ФЗ и 223-ФЗ, сортирует по дате обновления."
     ),
 )
 async def search_purchases(
     ctx: Context,
-    okpd2_codes: List[str] = Field(
-        default_factory=list, description="Список кодов ОКПД2 (можно передать несколько)."
+    classifiers: List[str] = Field(
+        default_factory=list,
+        description="Коды классификаторов (только ОКПД2), можно несколько значений.",
     ),
     region_codes: List[int] = Field(
         default_factory=list, description="Коды регионов, пусто — все регионы."
     ),
-    applications_end_before: str | None = Field(
+    collecting_finished_after: str | None = Field(
         None,
-        description="ISO-дата/дата-время: исключить закупки с дедлайном позже указанной даты.",
+        description="ISO дата/время: окончание подачи заявок позже указанного момента.",
     ),
-    law: Literal["ALL", LawLiteral] = Field(
-        "ALL", description="Искать по 44-ФЗ, 223-ФЗ или по обоим сразу."
+    collecting_finished_before: str | None = Field(
+        None,
+        description="ISO дата/время: окончание подачи заявок раньше указанного момента.",
     ),
 ) -> ToolResult:
     """Поиск государственных закупок по входным параметрам."""
@@ -81,13 +94,14 @@ async def search_purchases(
 
     settings = get_settings()
     try:
-        end_dt = parse_datetime(applications_end_before)
+        finished_after_dt = parse_datetime(collecting_finished_after)
+        finished_before_dt = parse_datetime(collecting_finished_before)
         params = SearchPurchasesParams(
-            okpd2_codes=okpd2_codes,
+            classifiers=classifiers,
             region_codes=region_codes,
-            applications_end_before=end_dt,
-            law=law,
-            limit=settings.purchases_limit,
+            collecting_finished_after=finished_after_dt,
+            collecting_finished_before=finished_before_dt,
+            limit=settings.purchases_limit * 2,
         )
         
     except ValidationError as exc:
@@ -98,18 +112,13 @@ async def search_purchases(
 
     await ctx.report_progress(progress=15, total=100)
 
-    laws_to_query: list[LawLiteral] = (
-        ["44-FZ", "223-FZ"] if params.law == "ALL" else [params.law]
-    )
+    laws_to_query: list[LawLiteral] = ["44-FZ", "223-FZ"]
     collected: list[PurchaseListItem] = []
+    per_law_limit = settings.purchases_limit
 
     async with create_http_client() as client:
         for current_law in laws_to_query:
-            if len(collected) >= params.limit:
-                break
-
-            limit_left = params.limit - len(collected)
-            query_params = _prepare_query(params, limit_left)
+            query_params = _prepare_query(params, per_law_limit)
             path = f"/{LAW_PATHS[current_law]}/purchases"
 
             try:
@@ -148,6 +157,7 @@ async def search_purchases(
     filtered = filter_and_slice_results(
         _sort_purchases(collected),
         params,
+        limit=params.limit,
     )
 
     await ctx.report_progress(progress=90, total=100)
