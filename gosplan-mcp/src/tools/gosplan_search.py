@@ -9,13 +9,12 @@ import httpx
 from fastmcp import Context
 from mcp.shared.exceptions import ErrorData, McpError
 from mcp.types import TextContent
-from opentelemetry import trace
 from pydantic import Field, ValidationError
 
 from config import get_settings
 from mcp_instance import mcp
-from .models import LawLiteral, PurchaseListItem, SearchPurchasesParams
-from .utils import (
+from models import LawLiteral, PurchaseListItem, SearchPurchasesParams
+from tools.utils import (
     ToolResult,
     create_http_client,
     filter_and_slice_results,
@@ -23,8 +22,6 @@ from .utils import (
     format_purchase_list,
     parse_datetime,
 )
-
-tracer = trace.get_tracer(__name__)
 
 
 LAW_PATHS: dict[LawLiteral, str] = {
@@ -79,91 +76,87 @@ async def search_purchases(
 ) -> ToolResult:
     """Поиск государственных закупок по входным параметрам."""
 
-    with tracer.start_as_current_span("search_purchases") as span:
-        await ctx.info("🔍 Начинаем поиск государственных закупок")
-        await ctx.report_progress(progress=0, total=100)
+    await ctx.info("🔍 Начинаем поиск государственных закупок")
+    await ctx.report_progress(progress=0, total=100)
 
-        settings = get_settings()
-        try:
-            end_dt = parse_datetime(applications_end_before)
-            params = SearchPurchasesParams(
-                okpd2_codes=okpd2_codes,
-                region_codes=region_codes,
-                applications_end_before=end_dt,
-                law=law,
-                limit=settings.purchases_limit,
-            )
-        except ValidationError as exc:
-            span.set_attribute("error", "validation_error")
-            await ctx.error(f"❌ Неверные параметры: {exc}")
-            raise McpError(
-                ErrorData(code=-32602, message=f"Неверные параметры: {exc}")
-            ) from exc
-
-        await ctx.report_progress(progress=15, total=100)
-
-        laws_to_query: list[LawLiteral] = (
-            ["44-FZ", "223-FZ"] if params.law == "ALL" else [params.law]
+    settings = get_settings()
+    try:
+        end_dt = parse_datetime(applications_end_before)
+        params = SearchPurchasesParams(
+            okpd2_codes=okpd2_codes,
+            region_codes=region_codes,
+            applications_end_before=end_dt,
+            law=law,
+            limit=settings.purchases_limit,
         )
-        collected: list[PurchaseListItem] = []
+        
+    except ValidationError as exc:
+        await ctx.error(f"❌ Неверные параметры: {exc}")
+        raise McpError(
+            ErrorData(code=-32602, message=f"Неверные параметры: {exc}")
+        ) from exc
 
-        async with create_http_client() as client:
-            for current_law in laws_to_query:
-                if len(collected) >= params.limit:
-                    break
+    await ctx.report_progress(progress=15, total=100)
 
-                limit_left = params.limit - len(collected)
-                query_params = _prepare_query(params, limit_left)
-                path = f"/{LAW_PATHS[current_law]}/purchases"
+    laws_to_query: list[LawLiteral] = (
+        ["44-FZ", "223-FZ"] if params.law == "ALL" else [params.law]
+    )
+    collected: list[PurchaseListItem] = []
 
-                try:
-                    response = await client.get(path, params=query_params)
-                    response.raise_for_status()
-                except httpx.HTTPStatusError as exc:
-                    span.set_attribute("error", "http_status_error")
-                    error_message = format_api_error(
-                        exc.response.text if exc.response else "",
-                        exc.response.status_code if exc.response else 0,
+    async with create_http_client() as client:
+        for current_law in laws_to_query:
+            if len(collected) >= params.limit:
+                break
+
+            limit_left = params.limit - len(collected)
+            query_params = _prepare_query(params, limit_left)
+            path = f"/{LAW_PATHS[current_law]}/purchases"
+
+            try:
+                response = await client.get(path, params=query_params)
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                error_message = format_api_error(
+                    exc.response.text if exc.response else "",
+                    exc.response.status_code if exc.response else 0,
+                )
+                await ctx.error(f"❌ HTTP ошибка: {error_message}")
+                raise McpError(
+                    ErrorData(
+                        code=-32603,
+                        message=f"Не удалось получить список закупок.\n\n{error_message}",
                     )
-                    await ctx.error(f"❌ HTTP ошибка: {error_message}")
-                    raise McpError(
-                        ErrorData(
-                            code=-32603,
-                            message=f"Не удалось получить список закупок.\n\n{error_message}",
-                        )
-                    ) from exc
-                except httpx.RequestError as exc:
-                    span.set_attribute("error", "request_error")
-                    await ctx.error(f"❌ Ошибка запроса: {exc}")
-                    raise McpError(
-                        ErrorData(
-                            code=-32603,
-                            message="Не удалось выполнить запрос к API",
-                        )
-                    ) from exc
+                ) from exc
+                
+            except httpx.RequestError as exc:
+                await ctx.error(f"❌ Ошибка запроса: {exc}")
+                raise McpError(
+                    ErrorData(
+                        code=-32603,
+                        message="Не удалось выполнить запрос к API",
+                    )
+                ) from exc
 
-                batch = [
-                    PurchaseListItem(law=current_law, **item)
-                    for item in response.json()
-                ]
-                collected.extend(batch)
+            batch = [
+                PurchaseListItem(law=current_law, **item)
+                for item in response.json()
+            ]
+            collected.extend(batch)
 
-        await ctx.report_progress(progress=70, total=100)
+    await ctx.report_progress(progress=70, total=100)
 
-        filtered = filter_and_slice_results(
-            _sort_purchases(collected),
-            params,
-        )
+    filtered = filter_and_slice_results(
+        _sort_purchases(collected),
+        params,
+    )
 
-        await ctx.report_progress(progress=90, total=100)
-        formatted_text = format_purchase_list(filtered)
+    await ctx.report_progress(progress=90, total=100)
+    formatted_text = format_purchase_list(filtered)
 
-        await ctx.report_progress(progress=100, total=100)
-        span.set_attribute("success", True)
-        span.set_attribute("results_count", len(filtered))
+    await ctx.report_progress(progress=100, total=100)
 
-        return ToolResult(
-            content=[TextContent(type="text", text=formatted_text)],
-            structured_content=[item.model_dump() for item in filtered],
-            meta={"count": len(filtered)},
-        )
+    return ToolResult(
+        content=[TextContent(type="text", text=formatted_text)],
+        structured_content=[item.model_dump() for item in filtered],
+        meta={"count": len(filtered)},
+    )

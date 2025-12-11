@@ -13,7 +13,7 @@ from mcp.shared.exceptions import ErrorData, McpError
 from mcp.types import TextContent
 
 from config import get_settings
-from .models import (
+from models import (
     AttachmentInfo,
     ClassifierCode,
     CustomerInfo,

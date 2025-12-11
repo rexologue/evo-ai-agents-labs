@@ -1,8 +1,10 @@
 [project]
 name = "agent-service"
 version = "0.1.0"
-description = "ProfileAgent for classifying company descriptions and storing via db-mcp"
-authors = [{name = "Evo AI Agents Labs"}]
+description = "ProfileAgent for classifying company descriptions via codes-mcp and storing via db-mcp"
+authors = [
+    { name = "rexologue", email = "mironovigoroffical@gmail.com" }
+]
 requires-python = ">=3.11"
 dependencies = [
     "fastmcp>=0.5.0",
