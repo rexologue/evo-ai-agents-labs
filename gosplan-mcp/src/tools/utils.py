@@ -130,9 +130,9 @@ def format_purchase_summary(purchase: PurchaseListItem) -> str:
 
     stage_map = {
         1: "подача заявок",
-        2: "рассмотрение",
-        3: "определение победителя",
-        4: "заключение договора",
+        2: "работа комиссии",
+        3: "закупка завершена",
+        4: "закупка отменена",
     }
 
     close_at_str = (
@@ -437,6 +437,7 @@ def build_purchase_features(raw: dict[str, Any], law: LawLiteral) -> PurchaseFea
 def filter_and_slice_results(
     purchases: List[PurchaseListItem],
     params: SearchPurchasesParams,
+    limit: int,
 ) -> List[PurchaseListItem]:
     """Применяет клиентские фильтры и ограничение по количеству."""
 
@@ -444,11 +445,14 @@ def filter_and_slice_results(
     for item in purchases:
         if params.region_codes and item.region is not None and item.region not in params.region_codes:
             continue
-        if params.applications_end_before and item.submission_close_at:
-            if item.submission_close_at > params.applications_end_before:
+        if params.collecting_finished_after and item.submission_close_at:
+            if item.submission_close_at <= params.collecting_finished_after:
+                continue
+        if params.collecting_finished_before and item.submission_close_at:
+            if item.submission_close_at >= params.collecting_finished_before:
                 continue
         filtered.append(item)
-        if len(filtered) >= params.limit:
+        if len(filtered) >= limit:
             break
 
     return filtered
