@@ -28,6 +28,35 @@ def _safe_parse_json(text: str) -> Dict[str, Any]:
         return {}
 
 
+def _extract_json_block(text: str) -> str | None:
+    """Выделяет JSON-блок из ответа LLM с размышлениями/разметкой."""
+
+    if not text:
+        return None
+
+    stripped = text.strip()
+    if stripped.startswith("{") and stripped.endswith("}"):
+        return stripped
+
+    # Markdown-кодблоки
+    if "```" in stripped:
+        parts = stripped.split("```")
+        for part in parts:
+            candidate = part.strip()
+            if candidate.startswith("json"):
+                candidate = candidate[len("json") :].strip()
+            if candidate.startswith("{") and candidate.endswith("}"):
+                return candidate
+
+    # Fallback: ищем первую и последнюю фигурные скобки
+    start = stripped.find("{")
+    end = stripped.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        return stripped[start : end + 1]
+
+    return None
+
+
 class PurchaseMatcherAgent:
     """Оркестратор диалога и поиска закупок."""
 
@@ -99,7 +128,9 @@ class PurchaseMatcherAgent:
         resp = await self.llm.ainvoke(msgs)
         resp_content = resp.content if hasattr(resp, "content") else str(resp)
         logger.info("Intent LLM raw response: %s", resp_content)
-        data = _safe_parse_json(resp_content)
+
+        json_block = _extract_json_block(resp_content) or ""
+        data = _safe_parse_json(json_block)
         if not data:
             logger.warning("Intent JSON parsing failed for message='%s'", message)
             data = {}
