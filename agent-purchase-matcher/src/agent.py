@@ -9,9 +9,9 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.tools import BaseTool
 
-from .config import get_settings
-from .mcp_utils import load_mcp_tools
-from .prompts import (
+from config import get_settings
+from mcp_utils import load_mcp_tools
+from prompts import (
     DESCRIPTION_SYSTEM_PROMPT,
     INTENT_SYSTEM_PROMPT,
     SCORING_SYSTEM_PROMPT,

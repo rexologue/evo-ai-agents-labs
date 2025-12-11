@@ -10,7 +10,7 @@ from a2a.types import Task, TaskState, UnsupportedOperationError
 from a2a.utils import new_agent_text_message, new_task
 from a2a.utils.errors import ServerError
 
-from .a2a_wrapper import PurchaseMatcherA2AWrapper
+from a2a_wrapper import PurchaseMatcherA2AWrapper
 
 logger = logging.getLogger(__name__)
 

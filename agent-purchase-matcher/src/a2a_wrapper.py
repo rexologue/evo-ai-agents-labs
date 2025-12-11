@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, AsyncGenerator, Dict
 
-from .agent import PurchaseMatcherAgent
+from agent import PurchaseMatcherAgent
 
 
 class PurchaseMatcherA2AWrapper:

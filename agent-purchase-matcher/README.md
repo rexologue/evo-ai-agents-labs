@@ -4,12 +4,10 @@
 
 ## Запуск
 
-1. Настройте переменные окружения (`LLM_MODEL`, `LLM_API_KEY`, `LLM_API_BASE`, `DB_MCP_URL`, `GOSPLAN_MCP_URL`, `AGENT_PORT`, `AGENT_URL`).
-2. Установите зависимости (те же, что используются в других агентах платформы, включая `langchain_openai`, `langchain_mcp_adapters`, `a2a`).
-3. Запустите сервер:
-
+## 🚀 Запуск
 ```bash
-python -m purchase_matcher.src.start_a2a
+docker buildx build --platform linux/amd64 -t agent-purchase-matcher -f Dockerfile ..
+docker run --rm --network host --env-file .env agent-purchase-matcher
 ```
 
 Сервер поднимет A2A endpoint с карточкой агента `PurchaseMatcher`.

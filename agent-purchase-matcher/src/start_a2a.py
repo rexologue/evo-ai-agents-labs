@@ -7,10 +7,10 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.tasks import InMemoryTaskStore
 from a2a.types import AgentCapabilities, AgentCard
 
-from .agent import PurchaseMatcherAgent
-from .agent_task_manager import PurchaseMatcherExecutor
-from .a2a_wrapper import PurchaseMatcherA2AWrapper
-from .config import get_settings, logger
+from agent import PurchaseMatcherAgent
+from agent_task_manager import PurchaseMatcherExecutor
+from a2a_wrapper import PurchaseMatcherA2AWrapper
+from config import get_settings, logger
 
 settings = get_settings()
 
