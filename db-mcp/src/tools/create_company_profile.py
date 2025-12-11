@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastmcp import Context
+from mcp.shared.exceptions import ErrorData, McpError
 from mcp.types import TextContent
 from pydantic import Field
 
@@ -17,8 +18,8 @@ from tools.utils import ToolResult, _require_env_vars
     description="""📝 Создает новый профиль компании и сохраняет его в PostgreSQL.""",
 )
 async def create_company_profile(
-    profile: CompanyProfileBase = Field(
-        ..., description="Структурированный профиль компании для сохранения"
+    profile: CompanyProfileBase | None = Field(
+        default=None, description="Структурированный профиль компании для сохранения"
     ),
     ctx: Context = None,
 ) -> ToolResult:
@@ -31,6 +32,16 @@ async def create_company_profile(
     Returns:
         ToolResult: Сохраненный профиль компании.
     """
+
+    if profile is None:
+        await ctx.error("❌ Не передан профиль компании")
+
+        raise McpError(
+            ErrorData(
+                code=-32602,
+                message="Параметр 'profile' обязателен для create_company_profile",
+            )
+        )
 
     _require_env_vars(["DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD"])
 
