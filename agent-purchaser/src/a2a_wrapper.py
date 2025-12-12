@@ -38,6 +38,12 @@ def _strip_token(text: str, token: str) -> Tuple[str, bool]:
     return cleaned, True
 
 
+def _has_token(text: str, token: str) -> bool:
+    if not text:
+        return False
+    return token in text
+
+
 def _find_earliest_token(s: str, tokens: Tuple[str, ...]) -> Tuple[Optional[int], Optional[str]]:
     """Возвращает (позиция, токен) для самого раннего вхождения любого токена в строке."""
     earliest_pos: Optional[int] = None
@@ -98,14 +104,18 @@ class LangChainA2AWrapper:
     def _postprocess_output(self, raw_output: str) -> Tuple[str, bool, bool]:
         """
         Возвращает:
-        - clean_output: текст без <think> и служебных маркеров,
+        - clean_output: текст без <think> и без <RESET_CONTEXT>,
+          но с сохранением <END_OF_SUGGESTION> (клиент может детектить завершение по тексту),
         - had_end_token: был ли <END_OF_SUGGESTION>,
         - had_reset_token: был ли <RESET_CONTEXT>.
         """
         without_think = _strip_think_blocks(raw_output)
 
+        # RESET скрываем (это служебный маркер для сброса контекста)
         cleaned, had_reset = _strip_token(without_think, _RESET_TOKEN)
-        cleaned, had_end = _strip_token(cleaned, _END_TOKEN)
+
+        # END НЕ удаляем — оставляем в тексте
+        had_end = _has_token(cleaned, _END_TOKEN)
 
         return cleaned, had_end, had_reset
 
@@ -173,7 +183,7 @@ class LangChainA2AWrapper:
 
             # carry держит только минимальный суффикс, который может быть началом стоп-токена
             carry = ""
-            kept_raw = ""  # именно это станет "полным ответом" (без текста после END/RESET)
+            kept_raw = ""  # полный ответ до (и включая END), без "хвоста" после токена
 
             stop_seen_end = False
             stop_seen_reset = False
@@ -203,13 +213,16 @@ class LangChainA2AWrapper:
                             "require_user_input": False,
                             "content": before,
                             "is_error": False,
-                            "is_event": True,  # промежуточный стрим-ивент
+                            "is_event": True,
                         }
 
                     if tok == _END_TOKEN:
                         stop_seen_end = True
+                        # ВАЖНО: END оставляем в тексте, чтобы клиент видел маркер завершения
+                        kept_raw += _END_TOKEN
                     elif tok == _RESET_TOKEN:
                         stop_seen_reset = True
+                        # RESET не добавляем: он будет скрыт от клиента
 
                     carry = ""
                     break
@@ -230,7 +243,7 @@ class LangChainA2AWrapper:
                         "require_user_input": False,
                         "content": emit,
                         "is_error": False,
-                        "is_event": True,  # промежуточный стрим-ивент
+                        "is_event": True,
                     }
 
             # Если стоп-токена не было — дописываем остаток carry (он не содержит полного токена).
@@ -259,8 +272,6 @@ class LangChainA2AWrapper:
             if self.auto_reset_on_complete and is_task_complete:
                 self._reset_session(session_id)
 
-            # ВАЖНО: финальный payload всегда содержит ПОЛНЫЙ clean_full (без "remaining"),
-            # чтобы клиенты, которые отображают только финальный ответ, не теряли начало текста.
             yield {
                 "is_task_complete": is_task_complete,
                 "require_user_input": require_user_input,
