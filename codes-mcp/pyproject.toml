@@ -1,5 +1,5 @@
 [project]
-name = "db-mcp"
+name = "codes-mcp"
 version = "0.1.0"
 description = "MCP server for providing OKPD2 and regions codes"
 authors = [

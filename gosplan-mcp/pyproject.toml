@@ -1,5 +1,5 @@
 [project]
-name = "db-mcp"
+name = "gosplan-mcp"
 version = "0.1.0"
 description = "MCP server for fetching purchases from GosPlan API"
 authors = [
