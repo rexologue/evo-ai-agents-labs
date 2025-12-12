@@ -36,3 +36,9 @@ docker run --rm --network host --env-file .env gosplan-mcp
 - `get_purchase_details(purchase_number, law?)` — детальная карточка закупки с pretty-форматированием.
 
 Полное описание аргументов доступно в `mcp_tools.json`.
+
+## Выгрузка на Cloud.ru
+```bash
+docker tag gosplan-mcp:latest your-artifact-registry.cloud.ru/gosplan-mcp-repo:v1.0.0
+docker push your-artifact-registry.cloud.ru/gosplan-mcp-repo:v1.0.0
+```

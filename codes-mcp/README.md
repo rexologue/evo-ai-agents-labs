@@ -32,3 +32,9 @@ docker run --rm --network host --env-file .env codes-mcp
 - `get_regions_codes()` — возвращает таблицу регионов и структурированные данные.
 
 Полное описание аргументов доступно в `mcp_tools.json`.
+
+## Выгрузка на Cloud.ru
+```bash
+docker tag codes-mcp:latest your-artifact-registry.cloud.ru/codes-mcp-repo:v1.0.0
+docker push your-artifact-registry.cloud.ru/codes-mcp-repo:v1.0.0
+```

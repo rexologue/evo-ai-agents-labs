@@ -29,3 +29,9 @@ docker run --rm --network host --env-file .env agent-profiler
 
 ## 📖 MCP / Agent инструменты
 Агент использует инструменты MCP-сервисов `db-mcp` и `codes-mcp` (описаны в их `mcp_tools.json`).
+
+## Выгрузка на Cloud.ru
+```bash
+docker tag agent-profiler:latest your-artifact-registry.cloud.ru/agent-profiler-repo:v1.0.0
+docker push your-artifact-registry.cloud.ru/agent-profiler-repo:v1.0.0
+```

@@ -29,3 +29,9 @@ docker run --rm --network host --env-file .env agent-purchaser
 
 ## 📖 MCP / Agent инструменты
 Агент использует инструменты MCP-сервисов `db-mcp` и `gosplan-mcp` (описаны в их `mcp_tools.json`).
+
+## Выгрузка на Cloud.ru
+```bash
+docker tag agent-purchaser:latest your-artifact-registry.cloud.ru/agent-purchaser-repo:v1.0.0
+docker push your-artifact-registry.cloud.ru/agent-purchaser-repo:v1.0.0
+```

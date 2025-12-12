@@ -1,17 +1,18 @@
 """Обертка LangChain агента PurchaseMatcher для A2A протокола."""
 
 import re
-import json
 import asyncio
 import logging
-from typing import Dict, Any, AsyncGenerator, List
+from typing import Dict, Any, AsyncGenerator, List, Tuple, Optional
 
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 logger = logging.getLogger(__name__)
 
 _THINK_BLOCK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
 _RESET_TOKEN = "<RESET_CONTEXT>"
+_END_TOKEN = "<END_OF_SUGGESTION>"
 
 
 def _strip_think_blocks(text: str) -> str:
@@ -21,53 +22,65 @@ def _strip_think_blocks(text: str) -> str:
     return _THINK_BLOCK_RE.sub("", text).strip()
 
 
-def _strip_reset_token(text: str) -> tuple[str, bool]:
-    """Удаляет служебный маркер <RESET_CONTEXT>, возвращает (чистый_текст, был_ли_маркер)."""
+def _strip_token(text: str, token: str) -> Tuple[str, bool]:
+    """
+    Удаляет служебный токен, возвращает (чистый_текст, был_ли_токен).
+    Удаляет ВСЕ вхождения токена (на всякий случай).
+    """
     if not text:
         return text, False
 
-    had_token = _RESET_TOKEN in text
+    had_token = token in text
     if not had_token:
         return text, False
 
-    cleaned = text.replace(_RESET_TOKEN, "").strip()
+    cleaned = text.replace(token, "").strip()
     return cleaned, True
 
 
-def _looks_like_jsonl(text: str) -> bool:
-    """
-    Проверяет, что ответ — чистый JSONL:
-    - есть хотя бы одна непустая строка;
-    - КАЖДАЯ непустая строка парсится как корректный JSON-объект.
-    """
-    if not text:
-        return False
+def _find_earliest_token(s: str, tokens: Tuple[str, ...]) -> Tuple[Optional[int], Optional[str]]:
+    """Возвращает (позиция, токен) для самого раннего вхождения любого токена в строке."""
+    earliest_pos: Optional[int] = None
+    earliest_tok: Optional[str] = None
+    for tok in tokens:
+        pos = s.find(tok)
+        if pos != -1 and (earliest_pos is None or pos < earliest_pos):
+            earliest_pos = pos
+            earliest_tok = tok
+    return earliest_pos, earliest_tok
 
-    lines = [line for line in text.splitlines() if line.strip()]
-    if not lines:
-        return False
 
-    try:
-        for line in lines:
-            obj = json.loads(line)
-            if not isinstance(obj, dict):
-                return False
-        return True
-    except Exception:
-        return False
+def _longest_suffix_prefix_len(s: str, tokens: Tuple[str, ...]) -> int:
+    """
+    Длина максимального суффикса s, который является префиксом одного из tokens,
+    но НЕ равен полному токену.
+    Это позволяет безопасно стримить, не "протекают" стоп-токены через границы чанков.
+    """
+    if not s:
+        return 0
+
+    best = 0
+    n = len(s)
+    for tok in tokens:
+        # держим только "недопрефикс", т.е. < len(tok)
+        max_k = min(len(tok) - 1, n)
+        # ищем самый длинный k
+        for k in range(max_k, 0, -1):
+            if s.endswith(tok[:k]):
+                if k > best:
+                    best = k
+                break
+    return best
 
 
 class LangChainA2AWrapper:
     """Обертка для преобразования LangChain агента PurchaseMatcher в A2A-интерфейс."""
 
-    # Для совместимости с A2A
     SUPPORTED_CONTENT_TYPES = ["text", "text/plain"]
 
     def __init__(self, agent_executor, auto_reset_on_complete: bool = True) -> None:
         self.agent_executor = agent_executor
-        # история как список BaseMessage (HumanMessage / AIMessage)
         self.sessions: Dict[str, List[BaseMessage]] = {}
-        # включаем/выключаем автоочистку сессии после завершения задачи
         self.auto_reset_on_complete = auto_reset_on_complete
 
     def _get_session_history(self, session_id: str) -> List[BaseMessage]:
@@ -82,24 +95,26 @@ class LangChainA2AWrapper:
             del self.sessions[session_id]
             logger.debug("Session %s has been reset (task complete).", session_id)
 
-    def _postprocess_output(self, raw_output: str) -> tuple[str, bool, bool]:
+    def _postprocess_output(self, raw_output: str) -> Tuple[str, bool, bool]:
         """
-        Применяет все пост-обработки и возвращает:
+        Возвращает:
         - clean_output: текст без <think> и служебных маркеров,
-        - is_final_jsonl: является ли текст финальным JSONL-результатом,
-        - reset_context: нужно ли сбросить контекст (<RESET_CONTEXT> был найден).
+        - had_end_token: был ли <END_OF_SUGGESTION>,
+        - had_reset_token: был ли <RESET_CONTEXT>.
         """
         without_think = _strip_think_blocks(raw_output)
-        cleaned, had_reset = _strip_reset_token(without_think)
-        is_jsonl = _looks_like_jsonl(cleaned)
-        return cleaned, is_jsonl, had_reset
+
+        cleaned, had_reset = _strip_token(without_think, _RESET_TOKEN)
+        cleaned, had_end = _strip_token(cleaned, _END_TOKEN)
+
+        return cleaned, had_end, had_reset
 
     async def invoke(self, query: str, session_id: str) -> Dict[str, Any]:
         """Синхронный (не-стриминговый) вызов агента."""
         try:
             chat_history = self._get_session_history(session_id)
 
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             result = await loop.run_in_executor(
                 None,
                 lambda: self.agent_executor.invoke(
@@ -110,26 +125,16 @@ class LangChainA2AWrapper:
                 ),
             )
 
-            if isinstance(result, dict):
-                raw_output = result.get("output", "")
-            else:
-                raw_output = str(result)
+            raw_output = result.get("output", "") if isinstance(result, dict) else str(result)
+            clean_output, had_end, had_reset = self._postprocess_output(raw_output)
 
-            clean_output, is_final_jsonl, reset_context = self._postprocess_output(raw_output)
-
-            # обновляем историю диалога
             if query:
                 chat_history.append(HumanMessage(content=query))
             if clean_output:
                 chat_history.append(AIMessage(content=clean_output))
 
-            # критерии завершения:
-            # - если был служебный маркер <RESET_CONTEXT> → задача завершена, контекст сбрасываем;
-            # - если ответ — чистый JSONL → считаем, что это финальный результат и задача завершена.
-            is_task_complete = bool(is_final_jsonl or reset_context)
-
-            # пока не финальный JSONL и не RESET_CONTEXT — ожидаем ответ пользователя
-            require_user_input = not is_task_complete and bool(clean_output and clean_output.strip())
+            is_task_complete = bool(had_end or had_reset)
+            require_user_input = (not is_task_complete) and bool(clean_output and clean_output.strip())
 
             response = {
                 "is_task_complete": is_task_complete,
@@ -164,7 +169,14 @@ class LangChainA2AWrapper:
                 len(chat_history),
             )
 
-            full_response = ""
+            stop_tokens = (_END_TOKEN, _RESET_TOKEN)
+
+            # carry держит только минимальный суффикс, который может быть началом стоп-токена
+            carry = ""
+            kept_raw = ""  # именно это станет "полным ответом" (без текста после END/RESET)
+
+            stop_seen_end = False
+            stop_seen_reset = False
 
             async for chunk in self.agent_executor.astream(
                 {
@@ -174,23 +186,60 @@ class LangChainA2AWrapper:
             ):
                 if not isinstance(chunk, dict):
                     continue
+                delta = chunk.get("output")
+                if not isinstance(delta, str) or not delta:
+                    continue
 
-                # Поток основного текста
-                if "output" in chunk and isinstance(chunk["output"], str):
-                    delta = chunk["output"]
-                    if delta:
-                        full_response += delta
-                        # Промежуточные токены — просто "working", без ожидания ввода
+                combined = carry + delta
+
+                # 1) Если в combined уже есть полный стоп-токен — режем по нему и завершаем стрим.
+                pos, tok = _find_earliest_token(combined, stop_tokens)
+                if tok is not None and pos is not None:
+                    before = combined[:pos]
+                    if before:
+                        kept_raw += before
                         yield {
                             "is_task_complete": False,
                             "require_user_input": False,
-                            "content": delta,
+                            "content": before,
                             "is_error": False,
-                            "is_event": False,
+                            "is_event": True,  # промежуточный стрим-ивент
                         }
 
-            # После окончания стрима обрабатываем накопленный ответ
-            clean_full, is_final_jsonl, reset_context = self._postprocess_output(full_response)
+                    if tok == _END_TOKEN:
+                        stop_seen_end = True
+                    elif tok == _RESET_TOKEN:
+                        stop_seen_reset = True
+
+                    carry = ""
+                    break
+
+                # 2) Полного токена нет — можно стримить "безопасную" часть.
+                k = _longest_suffix_prefix_len(combined, stop_tokens)
+                if k > 0:
+                    emit = combined[:-k]
+                    carry = combined[-k:]
+                else:
+                    emit = combined
+                    carry = ""
+
+                if emit:
+                    kept_raw += emit
+                    yield {
+                        "is_task_complete": False,
+                        "require_user_input": False,
+                        "content": emit,
+                        "is_error": False,
+                        "is_event": True,  # промежуточный стрим-ивент
+                    }
+
+            # Если стоп-токена не было — дописываем остаток carry (он не содержит полного токена).
+            if carry and not (stop_seen_end or stop_seen_reset):
+                kept_raw += carry
+                carry = ""
+
+            # Финальная пост-обработка
+            clean_full, had_end, had_reset = self._postprocess_output(kept_raw)
 
             # Обновляем историю диалога
             if query:
@@ -204,32 +253,21 @@ class LangChainA2AWrapper:
                 len(chat_history),
             )
 
-            is_task_complete = bool(is_final_jsonl or reset_context)
-            require_user_input = not is_task_complete and bool(clean_full and clean_full.strip())
-
-            if not full_response or clean_full != full_response:
-                final_payload = {
-                    "is_task_complete": is_task_complete,
-                    "require_user_input": require_user_input,
-                    "content": clean_full,
-                    "is_error": False,
-                    "is_event": False,
-                }
-            else:
-                # Весь текст уже ушёл стримом, финальное сообщение — только статус
-                final_payload = {
-                    "is_task_complete": is_task_complete,
-                    "require_user_input": require_user_input,
-                    "content": "",
-                    "is_error": False,
-                    "is_event": False,
-                }
+            is_task_complete = bool(had_end or had_reset or stop_seen_end or stop_seen_reset)
+            require_user_input = (not is_task_complete) and bool(clean_full and clean_full.strip())
 
             if self.auto_reset_on_complete and is_task_complete:
                 self._reset_session(session_id)
 
-            # Отдаём финальное сообщение
-            yield final_payload
+            # ВАЖНО: финальный payload всегда содержит ПОЛНЫЙ clean_full (без "remaining"),
+            # чтобы клиенты, которые отображают только финальный ответ, не теряли начало текста.
+            yield {
+                "is_task_complete": is_task_complete,
+                "require_user_input": require_user_input,
+                "content": clean_full,
+                "is_error": False,
+                "is_event": False,
+            }
 
         except Exception as e:
             logger.exception("Error in LangChainA2AWrapper.stream")
